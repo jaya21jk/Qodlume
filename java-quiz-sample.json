@@ -1,0 +1,42 @@
+{
+  "id": "quiz-2026-10-22-java-string-equality",
+  "version": 1,
+  "publicationDate": "2026-10-22",
+  "timezone": "Asia/Kolkata",
+  "status": "draft",
+  "title": "Java String Equality: == vs equals()",
+  "description": "Test your understanding of reference equality and value equality when comparing Java strings.",
+  "topic": "java",
+  "difficulty": "beginner",
+  "estimatedDurationMinutes": 3,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-20T00:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261022-java-1",
+      "prompt": "What does this code print?",
+      "codeSnippet": {
+        "language": "java",
+        "filename": "StringEquality.java",
+        "code": "String first = new String(\"qodlume\");\nString second = new String(\"qodlume\");\nSystem.out.println(first == second);\nSystem.out.println(first.equals(second));",
+        "highlightLines": [3, 4]
+      },
+      "options": [
+        { "id": "opt-a", "text": "true followed by true" },
+        { "id": "opt-b", "text": "false followed by true" },
+        { "id": "opt-c", "text": "true followed by false" },
+        { "id": "opt-d", "text": "false followed by false" }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "The == operator compares object references, and the two new expressions create distinct String objects, so it prints false. String.equals() compares character content, which is the same in both objects, so it prints true.",
+      "references": [
+        {
+          "title": "Java String API",
+          "url": "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/String.html#equals(java.lang.Object)",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["java", "strings", "equality"]
+    }
+  ]
+}

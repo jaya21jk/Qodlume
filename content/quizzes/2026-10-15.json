@@ -1,0 +1,62 @@
+{
+  "id": "quiz-2026-10-15-css-containment",
+  "version": 1,
+  "publicationDate": "2026-10-15",
+  "timezone": "Asia/Kolkata",
+  "status": "archived",
+  "title": "CSS Containment & Rendering Pipelines",
+  "description": "Archived challenge exploring browser layout boundaries, content-visibility, and paint isolation.",
+  "topic": "css",
+  "difficulty": "intermediate",
+  "estimatedDurationMinutes": 5,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-15T00:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261015-1",
+      "prompt": "Which CSS property allows the browser to skip rendering work (layout and paint) for off-screen elements until they approach the viewport?",
+      "codeSnippet": {
+        "language": "css",
+        "filename": "feed.css",
+        "code": ".article-card {\n  content-visibility: auto;\n  contain-intrinsic-size: 0 320px;\n}",
+        "highlightLines": [2, 3]
+      },
+      "options": [
+        { "id": "opt-a", "text": "will-change: transform" },
+        { "id": "opt-b", "text": "content-visibility: auto" },
+        { "id": "opt-c", "text": "isolation: isolate" },
+        { "id": "opt-d", "text": "backface-visibility: hidden" }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "content-visibility: auto instructs the user agent to skip layout, style, and paint work for off-screen subtrees while contain-intrinsic-size provides a placeholder geometry to avoid scrollbar jitter.",
+      "references": [
+        {
+          "title": "MDN: content-visibility",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["css", "rendering", "performance"]
+    },
+    {
+      "id": "q-20261015-2",
+      "prompt": "What does 'contain: layout' guarantee to the browser layout engine?",
+      "options": [
+        { "id": "opt-a", "text": "Nothing outside the element affects its internal layout, and nothing inside affects the layout of outside elements." },
+        { "id": "opt-b", "text": "The element cannot use Flexbox or CSS Grid." },
+        { "id": "opt-c", "text": "Child elements cannot inherit font or color properties." },
+        { "id": "opt-d", "text": "The element is automatically promoted to a GPU WebGL context." }
+      ],
+      "correctOptionId": "opt-a",
+      "explanation": "Layout containment establishes an independent formatting context boundary so that internal layout mutations do not require dirtying or reflowing the rest of the document tree.",
+      "references": [
+        {
+          "title": "CSS Containment Module Level 2",
+          "url": "https://www.w3.org/TR/css-contain-2/",
+          "type": "spec"
+        }
+      ],
+      "tags": ["css", "layout"]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.idea/
+build-log.txt
+build-output.txt

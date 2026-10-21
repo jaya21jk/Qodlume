@@ -1,0 +1,26 @@
+{
+  "name": "qodlume",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Qodlume — Daily Developer Quiz Platform with External Content Architecture",
+  "scripts": {
+    "dev": "next dev",
+    "validate:quizzes": "tsx scripts/validate-quizzes.ts",
+    "prebuild": "npm run validate:quizzes",
+    "build": "next build",
+    "start": "next start",
+    "test": "tsx --test tests/quiz-architecture.test.ts"
+  },
+  "dependencies": {
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

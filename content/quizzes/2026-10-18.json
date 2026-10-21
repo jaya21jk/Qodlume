@@ -1,0 +1,82 @@
+{
+  "id": "quiz-2026-10-18-js-event-loop",
+  "version": 1,
+  "publicationDate": "2026-10-18",
+  "timezone": "Asia/Kolkata",
+  "status": "published",
+  "title": "JavaScript Microtasks, Timers & AbortSignals",
+  "description": "Test your mental model of microtask queue draining, promise resolution ordering, and structured cancellation.",
+  "topic": "javascript",
+  "difficulty": "intermediate",
+  "estimatedDurationMinutes": 6,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-18T00:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261018-1",
+      "prompt": "What is the exact console output sequence when the following module executes?",
+      "codeSnippet": {
+        "language": "javascript",
+        "filename": "scheduler.mjs",
+        "code": "console.log('A');\nsetTimeout(() => console.log('B'), 0);\nPromise.resolve()\n  .then(() => {\n    console.log('C');\n    queueMicrotask(() => console.log('D'));\n  })\n  .then(() => console.log('E'));\nconsole.log('F');",
+        "highlightLines": [5, 6, 8]
+      },
+      "options": [
+        { "id": "opt-a", "text": "A, F, C, D, E, B" },
+        { "id": "opt-b", "text": "A, F, C, E, D, B" },
+        { "id": "opt-c", "text": "A, C, D, E, F, B" },
+        { "id": "opt-d", "text": "A, F, B, C, D, E" }
+      ],
+      "correctOptionId": "opt-a",
+      "explanation": "Synchronous logs 'A' and 'F' run first. When the first .then() callback executes, it logs 'C', schedules 'D' onto the microtask queue via queueMicrotask, and then resolves its returned promise—which queues the chained .then() ('E') after 'D'. All microtasks drain before the macrotask timer 'B' executes.",
+      "references": [
+        {
+          "title": "MDN: In depth: Microtasks and the JavaScript runtime environment",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide/In_depth",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["event-loop", "promises", "microtasks"]
+    },
+    {
+      "id": "q-20261018-2",
+      "prompt": "How does AbortSignal.any([signalA, signalB]) behave when signalA is already aborted before AbortSignal.any is called?",
+      "options": [
+        { "id": "opt-a", "text": "It throws a TypeError immediately." },
+        { "id": "opt-b", "text": "It returns a composite AbortSignal that is already in the aborted state with signalA.reason." },
+        { "id": "opt-c", "text": "It ignores signalA and waits for signalB to abort." },
+        { "id": "opt-d", "text": "It resets signalA so both signals can be reused." }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "AbortSignal.any() short-circuits: if any input signal is already aborted, the returned signal is immediately aborted and adopts that first aborted signal's reason.",
+      "references": [
+        {
+          "title": "MDN: AbortSignal.any() static method",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["abortsignal", "async", "web-apis"]
+    },
+    {
+      "id": "q-20261018-3",
+      "prompt": "What does Object.groupBy(items, callback) return in ECMAScript 2024?",
+      "options": [
+        { "id": "opt-a", "text": "A Map instance keyed by group names." },
+        { "id": "opt-b", "text": "A null-prototype object whose properties are arrays of grouped elements." },
+        { "id": "opt-c", "text": "A frozen WeakMap of grouped arrays." },
+        { "id": "opt-d", "text": "An iterator yielding [key, group] tuples." }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "Object.groupBy returns a null-prototype object (Object.create(null)) mapping property keys to arrays of elements so keys like 'toString' or '__proto__' never collide with Object.prototype.",
+      "references": [
+        {
+          "title": "MDN: Object.groupBy()",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["es2024", "objects"]
+    }
+  ]
+}

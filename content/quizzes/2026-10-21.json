@@ -1,0 +1,36 @@
+{
+  "id": "quiz-2026-10-21-system-design-caching",
+  "version": 1,
+  "publicationDate": "2026-10-21",
+  "timezone": "Asia/Kolkata",
+  "status": "draft",
+  "title": "Distributed Cache Stampede Mitigation & Stale-While-Revalidate",
+  "description": "Draft challenge covering request coalescing (singleflight), probabilistic early expiration, and CDN cache keys.",
+  "topic": "system-design",
+  "difficulty": "advanced",
+  "estimatedDurationMinutes": 8,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-19T12:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261021-1",
+      "prompt": "What technique prevents thousands of concurrent requests for an expired hot cache key from simultaneously querying the primary PostgreSQL database?",
+      "options": [
+        { "id": "opt-a", "text": "Request coalescing (singleflight / mutex lock per key) combined with stale-while-revalidate" },
+        { "id": "opt-b", "text": "Disabling connection pooling on the database" },
+        { "id": "opt-c", "text": "Setting Cache-Control: no-store on all responses" },
+        { "id": "opt-d", "text": "Increasing HTTP request timeout to 120 seconds" }
+      ],
+      "correctOptionId": "opt-a",
+      "explanation": "Request coalescing ensures only one worker recomputes the expired cache entry while concurrent callers either wait for the in-flight promise or immediately receive slightly stale data via stale-while-revalidate.",
+      "references": [
+        {
+          "title": "RFC 5861: HTTP Cache-Control Extensions for Stale Content",
+          "url": "https://datatracker.ietf.org/doc/html/rfc5861",
+          "type": "spec"
+        }
+      ],
+      "tags": ["caching", "system-design", "postgresql"]
+    }
+  ]
+}

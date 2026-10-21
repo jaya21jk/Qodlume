@@ -1,0 +1,62 @@
+{
+  "id": "quiz-2026-10-20-nextjs-static-architecture",
+  "version": 1,
+  "publicationDate": "2026-10-20",
+  "timezone": "Asia/Kolkata",
+  "status": "published",
+  "title": "Next.js Static Export, App Router & Build-Time Data Architecture",
+  "description": "Understand how generateStaticParams, Server Components, and static export constraints work together on edge CDNs.",
+  "topic": "nextjs",
+  "difficulty": "advanced",
+  "estimatedDurationMinutes": 8,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-20T00:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261020-1",
+      "prompt": "When Next.js is configured with `output: 'export'`, how are dynamic route segments like `app/quiz/[date]/page.tsx` resolved?",
+      "codeSnippet": {
+        "language": "typescript",
+        "filename": "src/app/quiz/[date]/page.tsx",
+        "code": "export async function generateStaticParams() {\n  const quizzes = await quizService.listPublishedQuizzes();\n  return quizzes.map((q) => ({ date: q.publicationDate }));\n}",
+        "highlightLines": [1, 3]
+      },
+      "options": [
+        { "id": "opt-a", "text": "They are rendered on-demand by a Node.js server whenever a browser requests an unknown date." },
+        { "id": "opt-b", "text": "generateStaticParams() executes at build time to pre-render HTML and RSC payloads for each returned parameter set." },
+        { "id": "opt-c", "text": "Dynamic routes are forbidden when output: 'export' is enabled." },
+        { "id": "opt-d", "text": "The browser directly reads the server filesystem using fs.readFileSync at runtime." }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "With static export (`output: 'export'`), Next.js runs `generateStaticParams()` during `next build` and emits static HTML/payload files for every returned route parameter.",
+      "references": [
+        {
+          "title": "Next.js Docs: Static Exports",
+          "url": "https://nextjs.org/docs/app/building-your-application/deploying/static-exports",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["nextjs", "static-export", "app-router"]
+    },
+    {
+      "id": "q-20261020-2",
+      "prompt": "Why must privileged secrets (such as database passwords or GitHub Personal Access Tokens) NEVER be placed in `NEXT_PUBLIC_*` environment variables?",
+      "options": [
+        { "id": "opt-a", "text": "Next.js refuses to compile if any NEXT_PUBLIC_ variable exceeds 32 characters." },
+        { "id": "opt-b", "text": "NEXT_PUBLIC_* values are inlined directly into the client-side JavaScript bundle sent to every visitor's browser." },
+        { "id": "opt-c", "text": "NEXT_PUBLIC_* variables are only readable inside middleware." },
+        { "id": "opt-d", "text": "They are automatically uploaded to public npm registries." }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "During compilation, Next.js replaces references to `process.env.NEXT_PUBLIC_*` with literal strings in the client bundle, making them visible to anyone inspecting browser network traffic or sources.",
+      "references": [
+        {
+          "title": "Next.js Docs: Environment Variables",
+          "url": "https://nextjs.org/docs/app/building-your-application/configuring/environment-variables",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["security", "nextjs", "environment-variables"]
+    }
+  ]
+}

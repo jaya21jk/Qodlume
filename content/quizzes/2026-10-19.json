@@ -1,0 +1,88 @@
+{
+  "id": "quiz-2026-10-19-ts-type-narrowing",
+  "version": 1,
+  "publicationDate": "2026-10-19",
+  "timezone": "Asia/Kolkata",
+  "status": "published",
+  "title": "TypeScript Discriminated Unions & Exhaustiveness Checking",
+  "description": "Master control-flow analysis, the satisfies operator, and compile-time exhaustiveness guarantees in TypeScript.",
+  "topic": "typescript",
+  "difficulty": "intermediate",
+  "estimatedDurationMinutes": 7,
+  "author": "Qodlume Editorial",
+  "updatedAt": "2026-10-19T00:00:00+05:30",
+  "questions": [
+    {
+      "id": "q-20261019-1",
+      "prompt": "Why is the 'satisfies' operator preferred over a colon type annotation (: Record<string, string | number>) in the configuration below?",
+      "codeSnippet": {
+        "language": "typescript",
+        "filename": "theme.ts",
+        "code": "const palette = {\n  primary: '#0f172a',\n  accent: '#38bdf8',\n  spacingUnit: 8,\n} satisfies Record<string, string | number>;\n\nconst upper = palette.primary.toUpperCase();",
+        "highlightLines": [5, 7]
+      },
+      "options": [
+        { "id": "opt-a", "text": "satisfies validates compatibility with the target type without widening property types, preserving string methods on palette.primary." },
+        { "id": "opt-b", "text": "satisfies freezes the object at runtime like Object.freeze()." },
+        { "id": "opt-c", "text": "satisfies strips extra properties at compile time." },
+        { "id": "opt-d", "text": "satisfies converts numeric literals to strings automatically." }
+      ],
+      "correctOptionId": "opt-a",
+      "explanation": "A standard type annotation (: Record<string, string | number>) widens every property value to string | number, making palette.primary.toUpperCase() a compile error. The satisfies operator checks structural conformance while keeping the narrow inferred type for each property.",
+      "references": [
+        {
+          "title": "TypeScript 4.9 Release Notes: The satisfies Operator",
+          "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-9.html#the-satisfies-operator",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["typescript", "satisfies", "type-inference"]
+    },
+    {
+      "id": "q-20261019-2",
+      "prompt": "Which TypeScript type represents an unreachable code path and is idiomatically used in the default branch of a switch statement to enforce exhaustiveness?",
+      "codeSnippet": {
+        "language": "typescript",
+        "filename": "exhaustive.ts",
+        "code": "type Status = 'draft' | 'published';\n\nfunction label(status: Status): string {\n  switch (status) {\n    case 'draft': return 'Draft';\n    case 'published': return 'Live';\n    default: {\n      const _exhaustive: never = status;\n      return _exhaustive;\n    }\n  }\n}",
+        "highlightLines": [8]
+      },
+      "options": [
+        { "id": "opt-a", "text": "unknown" },
+        { "id": "opt-b", "text": "void" },
+        { "id": "opt-c", "text": "never" },
+        { "id": "opt-d", "text": "any" }
+      ],
+      "correctOptionId": "opt-c",
+      "explanation": "The 'never' type represents the empty set of values. When all union members are handled in prior case clauses, control-flow analysis narrows status to 'never'. If a new member is later added to Status, assigning status to 'never' fails at compile time.",
+      "references": [
+        {
+          "title": "TypeScript Handbook: Exhaustiveness Checking",
+          "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html#exhaustiveness-checking",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["typescript", "narrowing", "never"]
+    },
+    {
+      "id": "q-20261019-3",
+      "prompt": "What is the effect of 'noUncheckedIndexedAccess: true' in tsconfig.json when indexing into a Record<string, Quiz>?",
+      "options": [
+        { "id": "opt-a", "text": "It throws a runtime RangeError when a key is missing." },
+        { "id": "opt-b", "text": "It appends '| undefined' to the indexed access type (Quiz | undefined), forcing callers to guard against missing keys." },
+        { "id": "opt-c", "text": "It disallows bracket notation on objects entirely." },
+        { "id": "opt-d", "text": "It converts all Record types into Map instances during compilation." }
+      ],
+      "correctOptionId": "opt-b",
+      "explanation": "Enabling noUncheckedIndexedAccess includes 'undefined' in the type of any index signature lookup, preventing unsafe assumptions that arbitrary dictionary keys or array indices always exist.",
+      "references": [
+        {
+          "title": "TSConfig Reference: noUncheckedIndexedAccess",
+          "url": "https://www.typescriptlang.org/tsconfig/#noUncheckedIndexedAccess",
+          "type": "documentation"
+        }
+      ],
+      "tags": ["tsconfig", "strictness", "records"]
+    }
+  ]
+}
