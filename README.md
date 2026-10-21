@@ -23,6 +23,18 @@ The application uses the file-based repository during static builds. This keeps 
 
 > Browser uploads are never persisted on static hosting. A local preview can be validated, but the actual live content updates only after a new build is deployed from GitHub.
 
+## Deploying to Cloudflare Pages
+
+This project uses Next.js static export (`output: "export"` in `next.config.ts`), which writes the deployable site to `out/`.
+
+For a Git-connected Cloudflare Pages project, use:
+
+- **Build command:** `npm run build`
+- **Build output directory:** `out`
+- **Root directory:** `/`
+
+Let Cloudflare Pages publish the output directory. Do not use `npx wrangler deploy` or configure this as a Workers/OpenNext deployment: those commands try to deploy a Next.js Worker and are incompatible with this static export. The Next.js build itself should finish by exporting the static site to `out/`.
+
 ## Publication state model
 
 - `draft`: in-progress content that is excluded from public pages.
