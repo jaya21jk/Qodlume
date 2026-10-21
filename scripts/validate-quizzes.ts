@@ -1,10 +1,19 @@
-import { QUIZ_MANIFEST_ENTRIES } from '../src/data/quiz-manifest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { validateQuizCollection } from '../src/lib/quiz-validator';
 
-const report = validateQuizCollection(QUIZ_MANIFEST_ENTRIES);
+const contentDirectory = join(process.cwd(), 'content', 'quizzes');
+const entries = readdirSync(contentDirectory)
+  .filter((fileName) => fileName.endsWith('.json'))
+  .sort()
+  .map((fileName) => ({
+    fileName,
+    rawContent: JSON.parse(readFileSync(join(contentDirectory, fileName), 'utf8')) as unknown,
+  }));
+const report = validateQuizCollection(entries);
 
 console.log(`Checked ${report.totalFiles} quiz files at ${report.checkedAt}`);
-console.log(`Published: ${report.publishedCount} | Draft: ${report.draftCount} | Validated: ${report.validatedCount} | Archived: ${report.archivedCount}`);
+console.log(`Published: ${report.publishedCount} | Draft: ${report.draftCount} | Validated: ${report.validatedCount} | Scheduled: ${report.scheduledCount} | Archived: ${report.archivedCount}`);
 
 if (!report.valid) {
   for (const issue of report.collectionIssues) {

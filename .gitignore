@@ -5,3 +5,7 @@ out/
 .idea/
 build-log.txt
 build-output.txt
+.open-next/
+.dev.vars
+worker-configuration.d.ts
+.wrangler/

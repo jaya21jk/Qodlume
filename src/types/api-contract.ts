@@ -1,17 +1,17 @@
 /**
- * Future Backend REST API Contract (Spring Boot + PostgreSQL)
+ * Qodlume API contract
  *
- * Designed so the Next.js frontend and QuizRepository depend only on stable DTOs
- * and never on underlying PostgreSQL table structures or credentials.
+ * Public quiz routes read from D1 server-side and only return published records.
+ * Admin routes verify the signed HttpOnly session server-side; D1 bindings never
+ * leave the Worker.
  *
- * Target Data Flow (Phase 2+):
+ * Current quiz data flow:
  *   Owner uploads quiz JSON
- *   -> Spring Boot backend validates schema & uniqueness
- *   -> PostgreSQL stores versioned quiz & question records
- *   -> Publication workflow approves & transitions status to 'published'
- *   -> Next.js fetches published quiz DTOs via REST API
- *   -> User completes quiz & submits answers
- *   -> Backend validates eligible attempt & calculates official score on server
+ *   -> Next.js server validates schema and uniqueness
+ *   -> Cloudflare D1 stores quiz and question records
+ *   -> Public routes expose published quizzes only
+ *
+ * Server-scored quiz attempts remain a future extension.
  */
 
 import type {
@@ -106,16 +106,17 @@ export interface AdminImportQuizResponseDto {
 }
 
 /**
- * Contract describing all REST endpoints the future Spring Boot service will expose.
+ * Current admin and public route paths, plus planned attempt endpoints.
  */
 export const FUTURE_API_ENDPOINTS = {
-  GET_TODAYS_QUIZ: '/api/v1/quizzes/today',
+  GET_TODAYS_QUIZ: '/api/quizzes?date={date}',
   GET_QUIZ_BY_ID: (id: string) => `/api/v1/quizzes/${encodeURIComponent(id)}`,
-  GET_QUIZ_BY_DATE: (date: string) => `/api/v1/quizzes/by-date/${encodeURIComponent(date)}`,
-  LIST_PUBLISHED_ARCHIVE: '/api/v1/quizzes/archive',
+  GET_QUIZ_BY_DATE: (date: string) => `/api/quizzes?date=${encodeURIComponent(date)}`,
+  LIST_PUBLISHED_ARCHIVE: '/api/quizzes/archive',
   FILTER_QUIZZES: '/api/v1/quizzes',
   SUBMIT_ATTEMPT: (quizId: string) => `/api/v1/quizzes/${encodeURIComponent(quizId)}/attempts`,
   GET_ATTEMPT_RESULT: (attemptId: string) => `/api/v1/attempts/${encodeURIComponent(attemptId)}`,
-  ADMIN_IMPORT_QUIZ: '/api/v1/admin/quizzes/import',
-  ADMIN_PUBLISH_QUIZ: (quizId: string) => `/api/v1/admin/quizzes/${encodeURIComponent(quizId)}/publish`,
+  ADMIN_IMPORT_QUIZ: '/api/admin/quizzes',
+  ADMIN_PUBLISH_QUIZ: (quizId: string) => `/api/admin/quizzes/${encodeURIComponent(quizId)}`,
+  ADMIN_SESSION: '/api/admin/session',
 } as const;

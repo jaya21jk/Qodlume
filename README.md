@@ -1,57 +1,133 @@
 # Qodlume
 
-Qodlume is a static Next.js daily quiz app that keeps quiz content in external JSON files instead of embedding questions in page components or app logic.
+Qodlume is a Next.js daily developer quiz platform. Quiz content is stored in Cloudflare D1 for production publishing; the JSON files in `content/quizzes/` remain versioned backups and importable seed data.
 
-## Content source model
+## Quiz content and validation
 
-The Phase 1 architecture supports three data-source layers:
+The existing JSON format and validator remain the source format for imports. The validator checks quiz metadata, publication dates, statuses, question and option IDs, answer keys, explanations, code snippets, references, and supported question types. Publishing also enforces operational limits of 50 questions per quiz and 20 options per question.
 
-1. Local file-based content under `content/quizzes/*.json`
-2. Owner-side upload validation in the browser for a preview-only import workflow
-3. Future API-backed repository behind a shared `QuizRepository` interface
-
-The application uses the file-based repository during static builds. This keeps the site compatible with Cloudflare Pages and other static hosting providers.
-
-## Static publishing workflow
-
-1. Create or update a quiz JSON file in `content/quizzes/`.
-2. Run `node --import tsx ./scripts/validate-quizzes.ts` to validate the manifest and content.
-3. Review the exported draft or validated package in the admin import studio.
-4. Download the validated JSON package if needed.
-5. Commit the file to GitHub and deploy the static site.
-6. Only published content is visible to public visitors.
-
-> Browser uploads are never persisted on static hosting. A local preview can be validated, but the actual live content updates only after a new build is deployed from GitHub.
-
-## Deploying to Cloudflare Pages
-
-This project uses Next.js static export (`output: "export"` in `next.config.ts`), which writes the deployable site to `out/`.
-
-For a Git-connected Cloudflare Pages project, use:
-
-- **Build command:** `npm run build`
-- **Build output directory:** `out`
-- **Root directory:** `/`
-
-Let Cloudflare Pages publish the output directory. Do not use `npx wrangler deploy` or configure this as a Workers/OpenNext deployment: those commands try to deploy a Next.js Worker and are incompatible with this static export. The Next.js build itself should finish by exporting the static site to `out/`.
-
-## Publication state model
-
-- `draft`: in-progress content that is excluded from public pages.
-- `validated`: schema and business rules accepted, but not yet published.
-- `published`: visible to visitors and included in the archive.
-- `archived`: retained historical version; preserved for auditing and previous challenge references.
-
-## Validation
-
-Run the validator with:
+Run the validator against every JSON file in `content/quizzes/`:
 
 ```bash
-node --import tsx ./scripts/validate-quizzes.ts
+npm run validate:quizzes
 ```
 
-The build is guarded by `prebuild` and will fail if the published quiz content is invalid.
+`npm run build` runs this validation before the Next.js build.
 
-## Future backend integration
+## Publishing workflow
 
-The future Spring Boot + PostgreSQL workflow is documented in `src/types/api-contract.ts` and is intentionally isolated behind the repository abstraction so the UI does not depend on database table structures.
+Sign in at `/admin` using the `ADMIN_PASSWORD` Worker secret. The admin publishing workspace at `/admin/import` supports:
+
+- Creating and editing drafts or importing existing quiz JSON.
+- Validating and previewing content before saving.
+- Immediate publication, scheduling, unpublishing, archiving, and restoring.
+- Downloading quiz JSON backups.
+
+The server validates all content again before publication. Admin changes use same-origin, authenticated API requests; public pages and APIs only return records whose status is `published`. Scheduled items are published by the Worker Cron Trigger once a minute, even if no browser is open. Schedule timestamps are stored in UTC, while `publicationDate` remains a calendar date in the quiz’s IANA timezone (normally `Asia/Kolkata`).
+
+Public quiz payloads omit answer keys and explanations. Answers are graded on the server and feedback is returned only after a complete submission.
+
+## Cloudflare Workers and D1 setup
+
+This app needs the **Cloudflare Workers + OpenNext** runtime. It is no longer a static Cloudflare Pages export: dynamic D1-backed `/quiz/[date]`, archive, sitemap, and admin routes require server-side execution. Existing Cloudflare resources are not automatically removed or changed by these project files.
+
+1. Install dependencies, validate locally, and authenticate Wrangler:
+
+   ```bash
+   npm ci
+   npm test
+   npm run validate:quizzes
+   npx.cmd tsc --noEmit
+   npm run worker:build
+   npx.cmd wrangler login
+   ```
+
+2. Use the existing D1 database. `wrangler.jsonc` is configured with binding `DB`, database name `qodlume`, and database ID `e4938352-b62d-4420-8dee-a62d82f3a81b`. Do not run `npm run db:create` for this project; the database already exists. Local development defaults to Wrangler's local D1 emulator so a local admin session cannot accidentally change production data. Remote database commands explicitly use `--remote`.
+
+3. Configure production secrets; do not add them to Git. Check Cloudflare first so existing secrets are not unnecessarily replaced:
+
+   ```bash
+   npx.cmd wrangler secret put ADMIN_PASSWORD
+   npx.cmd wrangler secret put AUTH_SECRET
+   ```
+
+   `ADMIN_PASSWORD` must be at least 16 characters. `AUTH_SECRET` must be at least 32 characters and should be a cryptographically random value. These are Worker secrets, not `NEXT_PUBLIC_*` variables.
+
+4. Apply schema migrations and seed legacy content in local D1 first:
+
+   ```bash
+   npm run db:migrate:local
+   npm run db:seed:local
+   npm run preview
+   ```
+
+   These commands use Wrangler's local emulator. `npm run preview` also uses local D1.
+
+5. After checking the existing remote database's migration state and reviewing the content to be imported, migrate and seed the remote database:
+
+   ```bash
+   npm run db:migrate:remote
+   npm run db:seed:remote
+   ```
+
+   The JSON import is validated and inserts missing records without overwriting existing quizzes or editorial changes. The current JSON set contains three published quizzes, one draft, and one archived quiz. Do not run the remote seed until its additions have been reviewed.
+
+6. Deploy the Worker. The first deployment provides the public Worker URL; confirm the intended production URL before configuring `SITE_URL`. Until configured, sitemap and robots requests fail explicitly rather than returning URLs for a placeholder domain. Deploy once to obtain the URL:
+
+   ```bash
+   npm run deploy
+   ```
+
+   Add the confirmed HTTPS origin under `vars.SITE_URL` in `wrangler.jsonc`, then redeploy:
+
+   ```bash
+   npm run deploy
+   ```
+
+   For Git-connected Worker builds, use `npm ci` for install and `npm run deploy` for the build/deploy command. Do not use the old Cloudflare Pages `out/` output-directory settings or `npx.cmd wrangler deploy` as an unconfigured Next.js auto-detection step.
+
+Regenerate Cloudflare binding types after changing `wrangler.jsonc`:
+
+```bash
+npm run cf-typegen
+```
+
+## Local development
+
+Create an ignored `.dev.vars` file for the local Worker preview:
+
+```dotenv
+ADMIN_PASSWORD="use-a-local-password-of-at-least-16-characters"
+AUTH_SECRET="use-a-local-random-secret-of-at-least-32-characters"
+SITE_URL="http://localhost:8787"
+```
+
+Then run:
+
+```bash
+npm run db:migrate:local
+npm run db:seed:local
+npm run preview
+```
+
+`npm run dev` starts the Next.js development server and uses Wrangler's local bindings through the OpenNext dev integration. The D1 local database must already have its schema and seed data. The local-only `SITE_URL` is allowed to use `http://localhost:8787`; production URLs must use HTTPS.
+
+## Database model
+
+The migration in `migrations/` defines `quizzes`, `questions`, `question_options`, and `admin_login_attempts`, with foreign keys, checks, unique IDs/dates, and indexes. `topic` is Qodlume’s existing category field; this preserves the current topic values and avoids a redundant categories table. Optional question hints and code/reference/tag metadata are preserved.
+
+## Tests
+
+```bash
+npm test
+npm run validate:quizzes
+```
+
+The test suite covers legacy validation, publication validation, public status visibility rules, answer grading, schedule date/time handling, session signatures/expiry, and same-origin write protection.
+
+## Operational notes and limitations
+
+- A single shared administrator password is supported. Configure it as a Worker secret and rotate it when needed. This is not a multi-user identity provider or per-user role system.
+- Cron scheduling has one-minute granularity. Cloudflare Cron Triggers are best-effort at their scheduled minute; due quizzes are published on the next successful trigger.
+- `SITE_URL` is a non-secret Worker variable that must be set to the confirmed canonical HTTPS origin before relying on sitemap and robots output. No placeholder production URL is configured.
+- D1 database creation, remote migration/seed, secrets, Cloudflare project configuration, and deployment require the account owner’s Cloudflare access. This repository has not been connected to a production D1 database or deployed by these code changes.

@@ -1,22 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { Quiz } from "../types/quiz";
+import { useState } from "react";
+import { isQuizGradingResult } from "../lib/quiz-grading";
+import type { PublicQuiz, QuizGradingResult } from "../types/quiz";
 
-export function QuizPlayer({ quiz }: { quiz: Quiz }) {
+export function QuizPlayer({ quiz }: { quiz: PublicQuiz }) {
   const [selectedAnswers, setSelectedAnswers] = useState<
     Record<string, string>
   >({});
-  const [submitted, setSubmitted] = useState(false);
-
-  const score = useMemo(() => {
-    return quiz.questions.reduce((count, question) => {
-      const answer = selectedAnswers[question.id];
-      return answer === question.correctOptionId ? count + 1 : count;
-    }, 0);
-  }, [quiz.questions, selectedAnswers]);
+  const [gradingResult, setGradingResult] = useState<QuizGradingResult | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   const handleSelect = (questionId: string, optionId: string) => {
+    if (gradingResult || isSubmitting) return;
     setSelectedAnswers((current) => ({ ...current, [questionId]: optionId }));
   };
 
@@ -26,6 +23,44 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
 
   const answeredCount = Object.keys(selectedAnswers).length;
   const progressPercent = (answeredCount / quiz.questions.length) * 100;
+
+  const handleSubmit = async () => {
+    if (!allAnswered || isSubmitting || gradingResult) return;
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    try {
+      const response = await fetch(`/api/quizzes/${encodeURIComponent(quiz.publicationDate)}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: selectedAnswers }),
+      });
+      const payload: unknown = await response.json();
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "error" in payload &&
+        typeof payload.error === "string"
+      ) {
+        throw new Error(payload.error);
+      }
+      if (
+        !response.ok ||
+        typeof payload !== "object" ||
+        payload === null ||
+        !("result" in payload) ||
+        !isQuizGradingResult(payload.result)
+      ) {
+        throw new Error("Unable to grade the quiz. Please try again.");
+      }
+      setGradingResult(payload.result);
+    } catch (error) {
+      setSubmissionError(
+        error instanceof Error ? error.message : "Unable to grade the quiz. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div
@@ -84,7 +119,7 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
           </div>
         </div>
 
-        {submitted ? (
+        {gradingResult ? (
           <div
             style={{
               background: "#dcfce7",
@@ -94,7 +129,7 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
               fontWeight: 800,
             }}
           >
-            Score: {score}/{quiz.questions.length}
+            Score: {gradingResult.score}/{quiz.questions.length}
           </div>
         ) : (
           <div
@@ -115,9 +150,11 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
       <ol style={{ paddingLeft: 20, margin: 0 }}>
         {quiz.questions.map((question, index) => {
           const selected = selectedAnswers[question.id];
-          const correct = submitted && question.correctOptionId === selected;
-          const wrong =
-            submitted && selected && selected !== question.correctOptionId;
+          const feedback = gradingResult?.answers.find(
+            (answer) => answer.questionId === question.id,
+          );
+          const correct = feedback?.correct ?? false;
+          const wrong = feedback !== undefined && !feedback.correct;
 
           return (
             <li
@@ -154,17 +191,18 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
                 {question.options.map((option) => {
                   const isSelected = selected === option.id;
                   const isCorrectAnswer =
-                    submitted && option.id === question.correctOptionId;
+                    feedback !== undefined && option.id === feedback.correctOptionId;
                   const isWrongSelection =
-                    submitted &&
+                    feedback !== undefined &&
                     isSelected &&
-                    option.id !== question.correctOptionId;
+                    option.id !== feedback.correctOptionId;
 
                   return (
                     <button
                       key={option.id}
                       type="button"
                       onClick={() => handleSelect(question.id, option.id)}
+                      disabled={gradingResult !== null || isSubmitting}
                       style={{
                         textAlign: "left",
                         width: "100%",
@@ -198,7 +236,7 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
                 })}
               </div>
 
-              {submitted && (
+              {feedback && (
                 <div
                   style={{
                     marginTop: 12,
@@ -216,13 +254,19 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
                   <strong>
                     {correct ? "Correct." : wrong ? "Incorrect." : "Answer"}
                   </strong>{" "}
-                  {question.explanation}
+                  {feedback.explanation}
                 </div>
               )}
             </li>
           );
         })}
       </ol>
+
+      {submissionError && (
+        <p role="alert" style={{ color: "#b91c1c", fontWeight: 700 }}>
+          {submissionError}
+        </p>
+      )}
 
       <div
         style={{
@@ -235,31 +279,32 @@ export function QuizPlayer({ quiz }: { quiz: Quiz }) {
       >
         <button
           type="button"
-          onClick={() => setSubmitted(true)}
-          disabled={!allAnswered}
+          onClick={() => void handleSubmit()}
+          disabled={!allAnswered || isSubmitting || gradingResult !== null}
           style={{
-            background: allAnswered
+            background: allAnswered && !isSubmitting && !gradingResult
               ? "linear-gradient(135deg, #111827, #1e293b)"
               : "#cbd5e1",
-            color: allAnswered ? "#fff" : "#64748b",
+            color: allAnswered && !isSubmitting && !gradingResult ? "#fff" : "#64748b",
             border: "none",
             borderRadius: 12,
             padding: "12px 18px",
             fontWeight: 700,
-            cursor: allAnswered ? "pointer" : "not-allowed",
-            boxShadow: allAnswered
+            cursor: allAnswered && !isSubmitting && !gradingResult ? "pointer" : "not-allowed",
+            boxShadow: allAnswered && !isSubmitting && !gradingResult
               ? "0 12px 24px rgba(15, 23, 42, 0.18)"
               : "none",
           }}
         >
-          Submit answers
+          {isSubmitting ? "Submitting…" : gradingResult ? "Submitted" : "Submit answers"}
         </button>
 
         <button
           type="button"
           onClick={() => {
             setSelectedAnswers({});
-            setSubmitted(false);
+            setGradingResult(null);
+            setSubmissionError(null);
           }}
           style={{
             background: "transparent",

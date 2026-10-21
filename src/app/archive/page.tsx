@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { getPublishedQuizArchive } from "../../lib/quiz-content";
+import { getDatabase, listPublishedQuizSummaries } from "../../lib/quiz-database";
 
-export default function ArchivePage() {
-  const quizzes = getPublishedQuizArchive();
+export const dynamic = "force-dynamic";
+
+export default async function ArchivePage() {
+  const quizzes = await listPublishedQuizSummaries(await getDatabase());
 
   return (
     <main
@@ -143,7 +145,7 @@ export default function ArchivePage() {
                 quiz.publicationDate,
                 quiz.topic,
                 quiz.difficulty,
-                `${quiz.questions.length} questions`,
+                `${quiz.questionCount} questions`,
               ].map((meta) => (
                 <span
                   key={meta}

@@ -6,6 +6,7 @@
 export const PUBLICATION_STATUSES = [
   'draft',
   'validated',
+  'scheduled',
   'published',
   'archived',
 ] as const;
@@ -60,6 +61,8 @@ export interface QuizOption {
 export interface QuizQuestion {
   id: string;
   prompt: string;
+  hint?: string;
+  questionType?: 'single_choice';
   codeSnippet?: CodeSnippet;
   options: QuizOption[];
   correctOptionId: string;
@@ -74,6 +77,10 @@ export interface Quiz {
   publicationDate: string; // YYYY-MM-DD in Asia/Kolkata
   timezone: string; // e.g., "Asia/Kolkata"
   status: PublicationStatus;
+  scheduledAt?: string;
+  publishedAt?: string;
+  createdAt?: string;
+  createdBy?: string;
   title: string;
   description: string;
   topic: QuizTopic;
@@ -82,7 +89,25 @@ export interface Quiz {
   author?: string;
   updatedAt?: string;
   previousVersionId?: string;
+  validationErrors?: ValidationIssue[];
   questions: QuizQuestion[];
+}
+
+export type PublicQuizQuestion = Omit<QuizQuestion, 'correctOptionId' | 'explanation'>;
+
+export type PublicQuiz = Omit<Quiz, 'questions' | 'validationErrors' | 'createdBy'> & {
+  questions: PublicQuizQuestion[];
+};
+
+export interface QuizGradingResult {
+  score: number;
+  answers: {
+    questionId: string;
+    selectedOptionId: string;
+    correctOptionId: string;
+    explanation: string;
+    correct: boolean;
+  }[];
 }
 
 export interface QuizSummary {
@@ -98,6 +123,15 @@ export interface QuizSummary {
   estimatedDurationMinutes: number;
   questionCount: number;
   questionIds: string[];
+  updatedAt?: string;
+}
+
+export interface AdminQuizListItem extends Omit<QuizSummary, 'questionIds'> {
+  questionCount: number;
+  scheduledAt?: string;
+  publishedAt?: string;
+  updatedAt: string;
+  validationErrors: ValidationIssue[];
 }
 
 export interface QuizFilterCriteria {
@@ -137,6 +171,7 @@ export interface CollectionValidationReport {
   publishedCount: number;
   draftCount: number;
   validatedCount: number;
+  scheduledCount: number;
   archivedCount: number;
   fileReports: ValidationReport[];
   collectionIssues: ValidationIssue[];

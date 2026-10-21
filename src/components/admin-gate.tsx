@@ -3,56 +3,75 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
-const STORAGE_KEY = "qodlume-admin-auth";
-const DEFAULT_ADMIN_PASSWORD = "qodlume-admin";
-
 export function AdminGate({ children }: { children: ReactNode }) {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const requiredPassword =
-    process.env.NEXT_PUBLIC_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
-
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      setIsAuthorized(saved === "true");
-    } catch {
-      setIsAuthorized(false);
-    } finally {
-      setMounted(true);
-    }
+    let active = true;
+    fetch("/api/admin/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to check admin session.");
+        const result = (await response.json()) as { authenticated: boolean };
+        if (active) setIsAuthorized(result.authenticated);
+      })
+      .catch((sessionError: unknown) => {
+        if (active) {
+          setError(
+            sessionError instanceof Error
+              ? sessionError.message
+              : "Unable to check admin session.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setMounted(true);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
-    if (password === requiredPassword) {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, "true");
-      } catch {
-        // no-op for browsers that block storage
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(result.error ?? "Unable to sign in.");
+        return;
       }
-      setError("");
       setIsAuthorized(true);
-      return;
+      setPassword("");
+    } catch {
+      setError("Unable to reach the admin sign-in service.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setError("Incorrect access code. Please try again.");
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     try {
-      window.localStorage.removeItem(STORAGE_KEY);
+      const response = await fetch("/api/admin/session", { method: "DELETE" });
+      if (!response.ok) {
+        setError("Unable to sign out. Please retry.");
+        return;
+      }
+      setPassword("");
+      setError("");
+      setIsAuthorized(false);
     } catch {
-      // no-op for browsers that block storage
+      setError("Unable to reach the admin sign-out service.");
     }
-
-    setPassword("");
-    setError("");
-    setIsAuthorized(false);
   };
 
   if (!mounted) {
@@ -217,6 +236,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
             >
               <button
                 type="submit"
+                disabled={isSubmitting}
                 style={{
                   border: 0,
                   borderRadius: 12,
@@ -227,7 +247,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
                   cursor: "pointer",
                 }}
               >
-                Unlock admin
+                {isSubmitting ? "Signing in…" : "Unlock admin"}
               </button>
               <Link
                 href="/"

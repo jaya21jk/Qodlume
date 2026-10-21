@@ -2,9 +2,9 @@ import Link from "next/link";
 
 const adminMenu = [
   {
-    title: "Import quiz JSON",
+    title: "Manage and publish quizzes",
     description:
-      "Validate imported content before publication and review the final payload.",
+      "Create drafts, validate imports, schedule releases, and manage live quizzes.",
     href: "/admin/import",
     accent: "#2563eb",
   },

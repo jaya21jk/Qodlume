@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { QuizImporter } from "../../../components/quiz-importer";
+import { QuizPublishingConsole } from "../../../components/quiz-publishing-console";
 
 export default function AdminImportPage() {
   return (
@@ -48,17 +48,16 @@ export default function AdminImportPage() {
         <h1
           style={{ margin: "12px 0 8px", fontSize: "clamp(2rem, 4vw, 3rem)" }}
         >
-          Quiz import and validation
+          Quiz publishing workspace
         </h1>
         <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.7 }}>
-          This preview pipeline validates local JSON content before publication.
-          Static hosting cannot persist uploaded files to the deployed server,
-          so a validated export must be committed to the repository and
-          redeployed.
+          Create drafts, import and validate JSON, preview questions, publish
+          immediately, schedule future releases, and manage archived content.
+          All changes are saved to the Cloudflare D1 database.
         </p>
       </header>
 
-      <QuizImporter />
+      <QuizPublishingConsole />
     </main>
   );
 }

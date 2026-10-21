@@ -1,13 +1,9 @@
 /**
- * Static Manifest of External Quiz Content Files.
+ * Manifest of the versioned JSON quiz backups.
  *
- * Why this file exists:
- * Next.js static export (`output: 'export'`) pre-renders pages at build time and
- * cannot use Node's `fs` module inside client components in the browser.
- * By importing the external JSON files from `content/quizzes/*.json` here and
- * validating them through `quiz-validator.ts`, quiz content stays 100% in
- * standalone JSON files under `content/quizzes/` while remaining available
- * to both static build workers and the owner import studio.
+ * Production reads quiz content from D1. This manifest remains available to
+ * legacy local-file repository tests; migration and validation scripts read
+ * the full content/quizzes directory directly.
  */
 
 import quiz20261015 from '../../content/quizzes/2026-10-15.json';

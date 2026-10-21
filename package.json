@@ -8,19 +8,36 @@
     "validate:quizzes": "tsx scripts/validate-quizzes.ts",
     "prebuild": "npm run validate:quizzes",
     "build": "next build",
-    "start": "next start",
-    "test": "tsx --test tests/quiz-architecture.test.ts"
+    "start": "wrangler dev",
+    "worker:build": "opennextjs-cloudflare build",
+    "preview": "npm run worker:build && wrangler dev",
+    "deploy": "npm run worker:build && wrangler deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv",
+    "db:create": "wrangler d1 create qodlume",
+    "db:migrate:local": "wrangler d1 migrations apply qodlume --local",
+    "db:migrate:remote": "wrangler d1 migrations apply qodlume --remote",
+    "db:seed:local": "tsx scripts/import-quizzes-to-d1.ts --local",
+    "db:seed:remote": "tsx scripts/import-quizzes-to-d1.ts --remote",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "next": "^15.1.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "next": "^16.4.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261021.1",
+    "@opennextjs/cloudflare": "^1.20.13",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "wrangler": "^4.151.3"
+  },
+  "overrides": {
+    "@node-minify/core": {
+      "glob": "10.5.0"
+    }
   }
 }

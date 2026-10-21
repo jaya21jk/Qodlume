@@ -162,14 +162,13 @@ export function prepareQuizExportPackage(
 
   const targetFileName = `${quizToExport.publicationDate}.json`;
   const publishingSteps = [
-    `1. Download "${targetFileName}" using the export button.`,
+    `Download "${targetFileName}" using the export button.`,
     ...(previousPublishedBackup
-      ? [`2. Download backup "${previousPublishedBackup.backupFileName}" to retain the prior published version.`]
+      ? [`Download backup "${previousPublishedBackup.backupFileName}" to retain the prior published version.`]
       : []),
-    `Place "${targetFileName}" in content/quizzes/${targetFileName}.`,
-    `Add its JSON import and manifest entry in src/data/quiz-manifest.ts.`,
-    `Run "npm run validate:quizzes" to validate the content directory and manifest.`,
-    `Commit and push to GitHub so Cloudflare Pages builds and deploys the updated static site.`,
+    `Import and publish the quiz from the D1-backed admin workspace at /admin/import.`,
+    `Optionally store "${targetFileName}" in content/quizzes/ as a versioned backup.`,
+    `Run "npm run validate:quizzes" to validate versioned quiz backups.`,
   ];
 
   return {

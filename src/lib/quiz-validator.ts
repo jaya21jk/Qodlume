@@ -355,6 +355,19 @@ function validateQuestionObject(
     pushError
   );
 
+  const questionType = rawQuestion.questionType ?? 'single_choice';
+  if (questionType !== 'single_choice') {
+    pushError({
+      code: 'INVALID_QUESTION_TYPE',
+      severity: 'error',
+      message: `Question "${questionId}" uses an unsupported questionType.`,
+      fileName: quizFileName,
+      quizId,
+      questionId,
+      field: 'questions.questionType',
+    });
+  }
+
   if (!prompt || !explanation || !correctOptionId) {
     return undefined;
   }
@@ -362,6 +375,8 @@ function validateQuestionObject(
   return {
     id: questionId,
     prompt,
+    questionType: 'single_choice',
+    hint: isNonEmptyString(rawQuestion.hint) ? rawQuestion.hint.trim() : undefined,
     codeSnippet,
     options,
     correctOptionId,
@@ -529,6 +544,18 @@ function validateQuizObject(
       field: 'timezone',
     });
   }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    pushError({
+      code: 'INVALID_TIMEZONE',
+      severity: 'error',
+      message: `Quiz "${quizId ?? 'unknown'}" timezone "${timezone}" is not a valid IANA timezone.`,
+      fileName,
+      quizId,
+      field: 'timezone',
+    });
+  }
 
   if (!Array.isArray(rawQuiz.questions) || rawQuiz.questions.length === 0) {
     pushError({
@@ -541,6 +568,35 @@ function validateQuizObject(
       field: 'questions',
     });
     return undefined;
+  }
+
+  const scheduledAt = isNonEmptyString(rawQuiz.scheduledAt) ? rawQuiz.scheduledAt.trim() : undefined;
+  const publishedAt = isNonEmptyString(rawQuiz.publishedAt) ? rawQuiz.publishedAt.trim() : undefined;
+  for (const [field, value] of [
+    ['scheduledAt', scheduledAt],
+    ['publishedAt', publishedAt],
+  ] as const) {
+    if (value && (!/(Z|[+-]\d{2}:\d{2})$/.test(value) || !Number.isFinite(Date.parse(value)))) {
+      pushError({
+        code: 'INVALID_TIMESTAMP',
+        severity: 'error',
+        message: `"${field}" must be a valid ISO timestamp with an explicit UTC offset.`,
+        fileName,
+        quizId,
+        field,
+      });
+    }
+  }
+
+  if (status === 'scheduled' && !scheduledAt) {
+    pushError({
+      code: 'MISSING_SCHEDULED_AT',
+      severity: 'error',
+      message: `Scheduled quiz "${quizId ?? 'unknown'}" must include a scheduledAt timestamp.`,
+      fileName,
+      quizId,
+      field: 'scheduledAt',
+    });
   }
 
   const seenQuestionIds = new Set<string>();
@@ -564,6 +620,10 @@ function validateQuizObject(
     publicationDate,
     timezone,
     status,
+    scheduledAt,
+    publishedAt,
+    createdAt: isNonEmptyString(rawQuiz.createdAt) ? rawQuiz.createdAt.trim() : undefined,
+    createdBy: isNonEmptyString(rawQuiz.createdBy) ? rawQuiz.createdBy.trim() : undefined,
     title,
     description,
     topic,
@@ -615,6 +675,32 @@ export function validateQuizJsonString(jsonText: string, fileName = 'quiz.json')
     });
     return report;
   }
+}
+
+export function validateQuizPublishingLimits(quiz: Quiz): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (quiz.questions.length > 50) {
+    issues.push({
+      code: 'QUESTION_LIMIT_EXCEEDED',
+      severity: 'error',
+      message: 'A quiz can contain at most 50 questions.',
+      quizId: quiz.id,
+      field: 'questions',
+    });
+  }
+  for (const question of quiz.questions) {
+    if (question.options.length > 20) {
+      issues.push({
+        code: 'OPTION_LIMIT_EXCEEDED',
+        severity: 'error',
+        message: `Question "${question.id}" can contain at most 20 answer options.`,
+        quizId: quiz.id,
+        questionId: question.id,
+        field: 'questions.options',
+      });
+    }
+  }
+  return issues;
 }
 
 export function validateQuizCollection(
@@ -690,6 +776,7 @@ export function validateQuizCollection(
   const publishedCount = fileReports.filter((report) => report.parsedQuiz?.status === 'published').length;
   const draftCount = fileReports.filter((report) => report.parsedQuiz?.status === 'draft').length;
   const validatedCount = fileReports.filter((report) => report.parsedQuiz?.status === 'validated').length;
+  const scheduledCount = fileReports.filter((report) => report.parsedQuiz?.status === 'scheduled').length;
   const archivedCount = fileReports.filter((report) => report.parsedQuiz?.status === 'archived').length;
 
   const valid = fileReports.every((report) => report.valid) && collectionIssues.length === 0;
@@ -700,6 +787,7 @@ export function validateQuizCollection(
     publishedCount,
     draftCount,
     validatedCount,
+    scheduledCount,
     archivedCount,
     fileReports,
     collectionIssues,

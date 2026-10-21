@@ -1,13 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { QuizPlayer } from "../../../components/quiz-player";
-import { quizRepository } from "../../../lib/quiz-content";
+import { getDatabase, getQuizByDate } from "../../../lib/quiz-database";
 
-export function generateStaticParams() {
-  return quizRepository
-    .listPublishedQuizzes()
-    .map((quiz) => ({ date: quiz.publicationDate }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function QuizDatePage({
   params,
@@ -15,7 +11,7 @@ export default async function QuizDatePage({
   params: Promise<{ date: string }>;
 }) {
   const { date } = await params;
-  const quiz = quizRepository.getQuizByPublicationDate(date);
+  const quiz = await getQuizByDate(await getDatabase(), date);
 
   if (!quiz) {
     notFound();

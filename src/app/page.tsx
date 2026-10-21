@@ -1,12 +1,20 @@
 import Link from "next/link";
+import { getCurrentDateInTimezone } from "../lib/config";
 import {
-  getCurrentPublishedQuiz,
-  getPublishedQuizArchive,
-} from "../lib/quiz-content";
+  getDatabase,
+  getQuizByDate,
+  listPublishedQuizSummaries,
+} from "../lib/quiz-database";
 
-export default function HomePage() {
-  const quiz = getCurrentPublishedQuiz();
-  const archive = getPublishedQuizArchive();
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const db = await getDatabase();
+  const today = getCurrentDateInTimezone();
+  const [quiz, archive] = await Promise.all([
+    getQuizByDate(db, today),
+    listPublishedQuizSummaries(db),
+  ]);
   const topics = Array.from(new Set(archive.map((item) => item.topic)));
   const topicLabels: Record<string, string> = {
     javascript: "JavaScript",

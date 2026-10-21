@@ -597,12 +597,12 @@ export function QuizImporter() {
           }}
         >
           <h3 id="publish-export-heading" style={{ margin: "0 0 8px" }}>
-            Deployment export prepared
+            Quiz backup prepared
           </h3>
           <p style={{ margin: "0 0 12px", color: "#166534", lineHeight: 1.6 }}>
-            The JSON file is downloaded with published status. This static site
-            cannot make uploads live directly; complete these repository steps
-            to publish the quiz and its topic to visitors.
+            The JSON file is a versioned backup, not a live publication. Publish
+            the quiz through the D1-backed admin workspace; live D1 changes do
+            not require a code deployment.
           </p>
           {publishPackage.previousPublishedBackup && (
             <button
