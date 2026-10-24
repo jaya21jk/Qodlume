@@ -18,6 +18,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply qodlume --remote",
     "db:seed:local": "tsx scripts/import-quizzes-to-d1.ts --local",
     "db:seed:remote": "tsx scripts/import-quizzes-to-d1.ts --remote",
+    "dictionary:generate": "tsx scripts/import-word-dictionary.ts",
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
