@@ -8,11 +8,19 @@ import {
   type DailyGameType,
 } from "../types/daily-game-challenge";
 import { dateTimeLocalToUtc } from "../lib/quiz-publishing";
+import { validateDailyGameChallenge } from "../lib/daily-game-challenges";
 
 const GAME_TITLES: Record<DailyGameType, string> = {
   "reaction-time": "Reaction Time Challenge",
   "word-guess": "Word Guess",
   "memory-match": "Memory Match",
+};
+
+const fieldLabelStyle = {
+  display: "grid",
+  gap: 6,
+  color: "#334155",
+  fontWeight: 700,
 };
 
 const STATUS_COLORS: Record<DailyGameChallenge["status"], string> = {
@@ -61,6 +69,17 @@ export function DailyGameChallengeConsole() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedGameType, setSelectedGameType] = useState<DailyGameType>("word-guess");
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
+  const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
+  const [bulkJson, setBulkJson] = useState("");
+  const [bulkPreview, setBulkPreview] = useState<Array<{
+    index: number;
+    valid: boolean;
+    title?: string;
+    gameType?: string;
+    publicationDate?: string;
+    errors: string[];
+  }>>([]);
+  const [bulkResult, setBulkResult] = useState<string[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -86,24 +105,61 @@ export function DailyGameChallengeConsole() {
 
   const validateEditor = (): DailyGameChallenge | undefined => {
     try {
-      const challenge = JSON.parse(editor) as DailyGameChallenge;
-      const issues: string[] = [];
-      if (!challenge.publicationDate) issues.push("publicationDate is required.");
-      if (!challenge.timezone) issues.push("timezone is required.");
-      if (!challenge.title?.trim()) issues.push("title is required.");
-      if (!challenge.description?.trim()) issues.push("description is required.");
-      if (!challenge.gameType || !DAILY_GAME_TYPES.includes(challenge.gameType)) {
-        issues.push("gameType must be reaction-time, word-guess, or memory-match.");
-      }
-      if (!challenge.configuration || typeof challenge.configuration !== "object") {
-        issues.push("configuration must be an object.");
-      }
-      const result = { valid: issues.length === 0, errors: issues };
-      setValidation(result);
-      return result.valid ? challenge : undefined;
+      const result = validateDailyGameChallenge(JSON.parse(editor));
+      setValidation({ valid: result.valid, errors: result.errors });
+      return result.challenge;
     } catch {
       setValidation({ valid: false, errors: ["Enter a valid JSON object."] });
       return undefined;
+    }
+  };
+
+  const updateEditorField = (field: string, value: unknown) => {
+    try {
+      const parsed: unknown = JSON.parse(editor);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+      const next: Record<string, unknown> = { ...parsed };
+      if (field.startsWith("configuration.")) {
+        const configurationValue = next.configuration;
+        const configuration: Record<string, unknown> =
+          typeof configurationValue === "object" &&
+          configurationValue !== null &&
+          !Array.isArray(configurationValue)
+            ? configurationValue as Record<string, unknown>
+            : {};
+        next.configuration = {
+          ...configuration,
+          [field.slice("configuration.".length)]: value,
+        };
+      } else {
+        next[field] = value;
+      }
+      setEditor(JSON.stringify(next, null, 2));
+      setValidation(null);
+    } catch {
+      setValidation({ valid: false, errors: ["Fix the JSON syntax before using the form fields."] });
+    }
+  };
+
+  const updateEditorConfiguration = (values: Record<string, unknown>) => {
+    try {
+      const parsed: unknown = JSON.parse(editor);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+      const parsedRecord = parsed as Record<string, unknown>;
+      const configurationValue = parsedRecord.configuration;
+      const configuration: Record<string, unknown> =
+        typeof configurationValue === "object" &&
+        configurationValue !== null &&
+        !Array.isArray(configurationValue)
+          ? configurationValue as Record<string, unknown>
+          : {};
+      setEditor(JSON.stringify({
+        ...parsedRecord,
+        configuration: { ...configuration, ...values },
+      }, null, 2));
+      setValidation(null);
+    } catch {
+      setValidation({ valid: false, errors: ["Fix the JSON syntax before using the form fields."] });
     }
   };
 
@@ -231,6 +287,124 @@ export function DailyGameChallengeConsole() {
     }
   };
 
+  const parseBulkChallenges = (): unknown[] | null => {
+    try {
+      const parsed: unknown = JSON.parse(bulkJson);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      if (items.length === 0) throw new Error("Provide at least one challenge.");
+      if (items.length > 100) throw new Error("Imports are limited to 100 challenges at a time.");
+
+      const seen = new Set<string>();
+      const preview = items.map((item, index) => {
+        const report = validateDailyGameChallenge(item);
+        if (!report.valid || !report.challenge) {
+          return { index, valid: false, errors: report.errors };
+        }
+        const challenge = report.challenge;
+        const key = `${challenge.gameType}:${challenge.publicationDate}`;
+        const duplicate = seen.has(key);
+        seen.add(key);
+        return {
+          index,
+          valid: !duplicate,
+          title: challenge.title,
+          gameType: challenge.gameType,
+          publicationDate: challenge.publicationDate,
+          errors: duplicate ? ["Duplicate game type and date in this import."] : [],
+        };
+      });
+      setBulkPreview(preview);
+      setBulkResult([]);
+      setError("");
+      return items;
+    } catch (parseError) {
+      setBulkPreview([]);
+      setError(parseError instanceof Error ? parseError.message : "Invalid JSON.");
+      return null;
+    }
+  };
+
+  const importBulkChallenges = async () => {
+    const items = parseBulkChallenges();
+    if (!items) return;
+    setBusy("bulk-import");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/daily-game-challenges/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import", challenges: items }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        results?: Array<{ index: number; status: string; errors?: string[]; publicationDate?: string; gameType?: string }>;
+      };
+      if (!response.ok || !result.results) {
+        throw new Error(result.error ?? "Bulk import failed.");
+      }
+      setBulkResult(result.results.map((item) =>
+        `Item ${item.index + 1}${item.gameType ? ` · ${item.gameType} · ${item.publicationDate}` : ""}: ${item.status}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
+      ));
+      await loadChallenges();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Bulk import failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const bulkSchedule = async () => {
+    const items = selectedForSchedule.map((id) => {
+      const challenge = challenges.find((item) => item.id === id);
+      const localValue = scheduleInputs[id];
+      if (!challenge || !localValue || !localValue.startsWith(`${challenge.publicationDate}T`)) {
+        return { id, scheduledAt: "", invalid: true };
+      }
+      const scheduledAt = dateTimeLocalToUtcSafe(localValue, challenge.timezone);
+      return { id, scheduledAt: scheduledAt ?? "", invalid: !scheduledAt || Date.parse(scheduledAt) <= Date.now() };
+    });
+    if (items.length === 0 || items.some((item) => item.invalid)) {
+      setError("Select draft challenges and choose a valid future time on each challenge date.");
+      return;
+    }
+
+    setBusy("bulk-schedule");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/daily-game-challenges/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "schedule",
+          items: items.map(({ id, scheduledAt }) => ({ id, scheduledAt })),
+        }),
+      });
+      const result = await response.json() as {
+        error?: string;
+        results?: Array<{ id: string; status: string; error?: string }>;
+      };
+      if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk scheduling failed.");
+      setBulkResult(result.results.map((item) => `${item.id}: ${item.status}${item.error ? ` — ${item.error}` : ""}`));
+      setSelectedForSchedule([]);
+      await loadChallenges();
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Bulk scheduling failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const downloadTemplate = (gameType: DailyGameType) => {
+    const template = makeNewChallenge(gameType);
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${gameType}-daily-challenge-template.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const editorChallenge = editor ? validatePreviewJson(editor) : null;
 
   return (
@@ -251,10 +425,35 @@ export function DailyGameChallengeConsole() {
         {!loading && challenges.length === 0 ? <p>No game challenges yet. Create a draft to get started.</p> : null}
 
         <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              disabled={selectedForSchedule.length === 0 || busy !== ""}
+              onClick={() => void bulkSchedule()}
+              style={buttonStyle}
+            >
+              Schedule selected ({selectedForSchedule.length})
+            </button>
+          </div>
           {challenges.map((challenge) => (
             <article key={challenge.id} style={challengeCardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
+                  {(challenge.status === "draft" || challenge.status === "unpublished") && (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedForSchedule.includes(challenge.id)}
+                        onChange={(event) => setSelectedForSchedule((current) =>
+                          event.target.checked
+                            ? [...current, challenge.id]
+                            : current.filter((id) => id !== challenge.id),
+                        )}
+                        aria-label={`Select ${challenge.title} for bulk scheduling`}
+                      />
+                      Select to schedule
+                    </label>
+                  )}
                   <h3 style={{ margin: "0 0 6px" }}>{challenge.title}</h3>
                   <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
                     {challenge.publicationDate} · {challenge.timezone} · {GAME_TITLES[challenge.gameType]}
@@ -304,6 +503,83 @@ export function DailyGameChallengeConsole() {
       </div>
 
       <div style={panelStyle}>
+        <h2 style={{ marginTop: 0 }}>Import games</h2>
+        <p style={{ color: "#475569", lineHeight: 1.6 }}>
+          Paste one challenge object or a JSON array. Imports are previewed and saved as drafts only; duplicates are reported rather than replaced.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+          <label style={buttonStyle}>
+            Choose JSON file
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  setBulkJson(await file.text());
+                  setBulkPreview([]);
+                  setBulkResult([]);
+                  setError("");
+                }
+                event.target.value = "";
+              }}
+              style={{ display: "none" }}
+            />
+          </label>
+          {DAILY_GAME_TYPES.map((gameType) => (
+            <button key={gameType} type="button" onClick={() => downloadTemplate(gameType)} style={buttonStyle}>
+              Download {GAME_TITLES[gameType]} template
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={bulkJson}
+          onChange={(event) => {
+            setBulkJson(event.target.value);
+            setBulkPreview([]);
+            setBulkResult([]);
+          }}
+          aria-label="Paste daily game challenge JSON"
+          placeholder='{"gameType":"word-guess", ...} or [{...}, {...}]'
+          spellCheck={false}
+          style={{
+            width: "100%",
+            minHeight: 220,
+            boxSizing: "border-box",
+            padding: 16,
+            border: "1px solid #cbd5e1",
+            borderRadius: 12,
+            fontFamily: "Consolas, monospace",
+            fontSize: 13,
+          }}
+        />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkChallenges()} style={buttonStyle}>
+            Validate / preview import
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges()} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Importing…" : "Import valid drafts"}
+          </button>
+        </div>
+        {bulkPreview.length > 0 && (
+          <ol style={{ display: "grid", gap: 8, paddingLeft: 24 }}>
+            {bulkPreview.map((item) => (
+              <li key={item.index} style={{ color: item.valid ? "#15803d" : "#b91c1c" }}>
+                {item.title ?? `Item ${item.index + 1}`} {item.gameType ? `· ${item.gameType} · ${item.publicationDate}` : ""}
+                {!item.valid ? ` — ${item.errors.join(" ")}` : " — valid"}
+              </li>
+            ))}
+          </ol>
+        )}
+        {bulkResult.length > 0 && (
+          <div aria-live="polite" style={{ marginTop: 12 }}>
+            <strong>Import / schedule results</strong>
+            {bulkResult.map((item) => <p key={item} style={{ margin: "6px 0", color: "#334155" }}>{item}</p>)}
+          </div>
+        )}
+      </div>
+
+      <div style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>{editingId ? "Edit challenge draft" : "Create or edit a challenge"}</h2>
         {!editingId && (
           <label style={{ display: "grid", gap: 6, maxWidth: 360, marginBottom: 14 }}>
@@ -318,6 +594,149 @@ export function DailyGameChallengeConsole() {
               ))}
             </select>
           </label>
+        )}
+
+        {editorChallenge && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12, marginBottom: 16 }}>
+            <label style={fieldLabelStyle}>
+              Publication date
+              <input
+                type="date"
+                value={editorChallenge.publicationDate}
+                onChange={(event) => updateEditorField("publicationDate", event.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={fieldLabelStyle}>
+              Timezone
+              <input
+                value={editorChallenge.timezone}
+                onChange={(event) => updateEditorField("timezone", event.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={fieldLabelStyle}>
+              Title
+              <input
+                value={editorChallenge.title}
+                onChange={(event) => updateEditorField("title", event.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={fieldLabelStyle}>
+              Description
+              <input
+                value={editorChallenge.description}
+                onChange={(event) => updateEditorField("description", event.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            {editorChallenge.gameType === "reaction-time" && (
+              <>
+                <label style={fieldLabelStyle}>
+                  Attempts
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={editorChallenge.configuration.attempts}
+                    onChange={(event) => updateEditorField("configuration.attempts", Number(event.target.value))}
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Minimum signal delay (ms)
+                  <input
+                    type="number"
+                    min={300}
+                    max={10000}
+                    value={editorChallenge.configuration.minimumDelayMs}
+                    onChange={(event) => updateEditorField("configuration.minimumDelayMs", Number(event.target.value))}
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Maximum signal delay (ms)
+                  <input
+                    type="number"
+                    min={300}
+                    max={10000}
+                    value={editorChallenge.configuration.maximumDelayMs}
+                    onChange={(event) => updateEditorField("configuration.maximumDelayMs", Number(event.target.value))}
+                    style={inputStyle}
+                  />
+                </label>
+              </>
+            )}
+            {editorChallenge.gameType === "word-guess" && (
+              <>
+                <label style={fieldLabelStyle}>
+                  Daily answer (five letters)
+                  <input
+                    maxLength={5}
+                    value={editorChallenge.configuration.answer}
+                    onChange={(event) => updateEditorField("configuration.answer", event.target.value.toUpperCase())}
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={{ ...fieldLabelStyle, gridColumn: "1 / -1" }}>
+                  Accepted words (one five-letter word per line)
+                  <textarea
+                    value={editorChallenge.configuration.validWords.join("\n")}
+                    onChange={(event) => updateEditorField(
+                      "configuration.validWords",
+                      event.target.value.split(/\r?\n/).map((word) => word.trim().toUpperCase()).filter(Boolean),
+                    )}
+                    rows={6}
+                    style={{ ...inputStyle, fontFamily: "Consolas, monospace" }}
+                  />
+                </label>
+                <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
+                  The answer is private: public clients submit guesses for server-side checking.
+                </p>
+              </>
+            )}
+            {editorChallenge.gameType === "memory-match" && (
+              <>
+                <label style={fieldLabelStyle}>
+                  Pair count
+                  <select
+                    value={editorChallenge.configuration.pairs}
+                    onChange={(event) => {
+                      const pairs = Number(event.target.value) as 6 | 8 | 12;
+                      const emojis = editorChallenge.configuration.emojis.slice(0, pairs);
+                      if (emojis.length < pairs) {
+                        emojis.push(
+                          ...DEFAULT_DAILY_GAME_CONFIGURATIONS["memory-match"].emojis.slice(
+                            emojis.length,
+                            pairs,
+                          ),
+                        );
+                      }
+                      updateEditorConfiguration({ pairs, emojis });
+                    }}
+                    style={inputStyle}
+                  >
+                    <option value={6}>Easy · 6 pairs</option>
+                    <option value={8}>Medium · 8 pairs</option>
+                    <option value={12}>Hard · 12 pairs</option>
+                  </select>
+                </label>
+                <label style={{ ...fieldLabelStyle, gridColumn: "1 / -1" }}>
+                  Emoji pairs (one emoji per line)
+                  <textarea
+                    value={editorChallenge.configuration.emojis.join("\n")}
+                    onChange={(event) => updateEditorField(
+                      "configuration.emojis",
+                      event.target.value.split(/\r?\n/).map((emoji) => emoji.trim()).filter(Boolean),
+                    )}
+                    rows={4}
+                    style={{ ...inputStyle, fontFamily: "Consolas, monospace" }}
+                  />
+                </label>
+              </>
+            )}
+          </div>
         )}
 
         <textarea
@@ -379,8 +798,8 @@ export function DailyGameChallengeConsole() {
 
 function validatePreviewJson(value: string): DailyGameChallenge | null {
   try {
-    const parsed = JSON.parse(value) as DailyGameChallenge;
-    return parsed && DAILY_GAME_TYPES.includes(parsed.gameType) ? parsed : null;
+    const validation = validateDailyGameChallenge(JSON.parse(value));
+    return validation.challenge ?? null;
   } catch {
     return null;
   }

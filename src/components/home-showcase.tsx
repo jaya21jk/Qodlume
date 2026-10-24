@@ -1,7 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
 
 export function HomeShowcase({
   quiz,
@@ -12,327 +9,114 @@ export function HomeShowcase({
   topics: string[];
   topicLabels: Record<string, string>;
 }) {
-  const [activeTab, setActiveTab] = useState<"quizzes" | "games">("quizzes");
-
-  const statCards = [
-    ["12k+", "active learners"],
-    ["4.9/5", "average rating"],
-    ["3 min", "daily challenge"],
-  ];
-
   return (
-    <main
-      style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        padding: "32px 20px 80px",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-          marginBottom: 20,
-        }}
-      >
-        <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: 2,
-              textTransform: "uppercase",
-              color: "#475569",
-            }}
-          >
-            Qodlume
-          </p>
-        </div>
-
-        <nav
-          style={{
-            display: "flex",
-            gap: 10,
-            background: "rgba(255,255,255,0.8)",
-            border: "1px solid rgba(148,163,184,0.32)",
-            borderRadius: 999,
-            padding: 6,
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setActiveTab("quizzes")}
-            style={{
-              border: "none",
-              cursor: "pointer",
-              borderRadius: 999,
-              padding: "10px 16px",
-              background: activeTab === "quizzes" ? "#0f172a" : "transparent",
-              color: activeTab === "quizzes" ? "#ffffff" : "#334155",
-              fontWeight: 700,
-            }}
-          >
-            Quizzes
-          </button>
-          <Link
-            href="/games"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              textDecoration: "none",
-              borderRadius: 999,
-              padding: "10px 16px",
-              background: activeTab === "games" ? "#0f172a" : "transparent",
-              color: activeTab === "games" ? "#ffffff" : "#334155",
-              fontWeight: 700,
-            }}
-          >
-            Games
-          </Link>
+    <main className="home">
+      <header className="site-header">
+        <Link href="/" className="brand" aria-label="Qodlume home">
+          Qodlume<span className="brand-dot">.</span>
+        </Link>
+        <nav aria-label="Main navigation" className="header-nav">
+          <Link href="/archive">Quiz archive</Link>
+          <Link href="/games">Games</Link>
         </nav>
       </header>
 
-      <section
-        style={{
-          background:
-            "linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #eef2ff 100%)",
-          border: "1px solid rgba(148,163,184,0.35)",
-          borderRadius: 32,
-          boxShadow: "0 26px 60px rgba(15, 23, 42, 0.08)",
-          padding: "28px 20px",
-          marginBottom: 28,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            marginBottom: 16,
-          }}
-        >
-          {topics.map((topic) => (
-            <span
-              key={topic}
-              style={{
-                background: "#eef2ff",
-                color: "#3730a3",
-                borderRadius: 999,
-                padding: "8px 12px",
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              {topicLabels[topic] ?? topic}
-            </span>
-          ))}
+      <section className="hero" aria-labelledby="hero-title">
+        <div className="hero-copy">
+          <p className="eyebrow">A brighter way to take a break</p>
+          <h1 id="hero-title">Give your brain a quick workout.</h1>
+          <p className="hero-subtitle">
+            Daily quizzes, clever puzzles, and quick games made for curious minds.
+          </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            gap: 22,
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: 2,
-                textTransform: "uppercase",
-                color: "#2563eb",
-              }}
-            >
-              Quick daily workout
-            </p>
-            <h1
-              style={{
-                margin: "14px 0 10px",
-                fontSize: "clamp(2.2rem, 7vw, 4rem)",
-                lineHeight: 1.04,
-                letterSpacing: "-0.06em",
-              }}
-            >
-              Give your brain a quick workout.
-            </h1>
-            <p
-              style={{
-                margin: "0 0 20px",
-                color: "#475569",
-                fontSize: "1.05rem",
-                lineHeight: 1.7,
-              }}
-            >
-              Play daily quizzes, solve clever puzzles, and challenge your personal best.
-            </p>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
-              <Link
-                href={quiz ? `/quiz/${quiz.publicationDate}` : "/archive"}
-                style={{
-                  textDecoration: "none",
-                  color: "#ffffff",
-                  background: "#0f172a",
-                  borderRadius: 999,
-                  padding: "14px 20px",
-                  fontWeight: 800,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                Explore Quizzes
-              </Link>
-              <Link
-                href="/games"
-                style={{
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  background: "#ffffff",
-                  border: "1px solid rgba(148,163,184,0.4)",
-                  borderRadius: 999,
-                  padding: "14px 20px",
-                  fontWeight: 800,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                Play Games
-              </Link>
+        <div className="feature-grid" aria-label="Explore Qodlume">
+          <Link href="/archive" className="feature-card quiz-card">
+            <div className="illustration quiz-illustration" aria-hidden="true">
+              <div className="quiz-sheet">
+                <span className="sheet-line line-one" />
+                <span className="sheet-line line-two" />
+                <span className="sheet-line line-three" />
+                <span className="sheet-check">✓</span>
+              </div>
+              <span className="quiz-spark spark-one">✦</span>
+              <span className="quiz-spark spark-two">?</span>
+              <span className="quiz-orb" />
             </div>
-          </div>
+            <div className="feature-copy">
+              <span className="feature-kicker">Think it through</span>
+              <h2>Quizzes</h2>
+              <p>Explore daily knowledge challenges, trivia, and brain teasers.</p>
+              <span className="feature-cta">Explore Quizzes <span aria-hidden="true">↗</span></span>
+            </div>
+          </Link>
 
-          <div
-            style={{
-              background: "rgba(255,255,255,0.8)",
-              border: "1px solid rgba(148,163,184,0.25)",
-              borderRadius: 24,
-              padding: 18,
-              display: "grid",
-              gap: 10,
-            }}
-          >
-            {statCards.map(([value, label]) => (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "14px 16px",
-                  borderRadius: 18,
-                  border: "1px solid rgba(148,163,184,0.2)",
-                  background: "#f8fafc",
-                }}
-              >
-                <span style={{ fontWeight: 800, fontSize: "1.2rem" }}>{value}</span>
-                <span style={{ color: "#475569" }}>{label}</span>
-              </div>
-            ))}
-          </div>
+          <Link href="/games" className="feature-card games-card">
+            <div className="illustration games-illustration" aria-hidden="true">
+              <div className="word-tile tile-a">Q</div>
+              <div className="word-tile tile-b">O</div>
+              <div className="word-tile tile-c">D</div>
+              <div className="memory-tile memory-a">✦</div>
+              <div className="memory-tile memory-b">?</div>
+              <span className="game-spark">✳</span>
+            </div>
+            <div className="feature-copy">
+              <span className="feature-kicker">Play a little</span>
+              <h2>Games</h2>
+              <p>Try Word Guess, Memory Match, or test your reaction time.</p>
+              <span className="feature-cta">Play Games <span aria-hidden="true">↗</span></span>
+            </div>
+          </Link>
         </div>
       </section>
 
-      <section>
-        {activeTab === "quizzes" ? (
-          <div
-            style={{
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(148,163,184,0.28)",
-              borderRadius: 26,
-              padding: 22,
-              boxShadow: "0 18px 40px rgba(15, 23, 42, 0.04)",
-            }}
-          >
-            {quiz ? (
-              <>
-                <p style={{ margin: 0, color: "#2563eb", fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>
-                  Today&apos;s challenge
-                </p>
-                <h2 style={{ margin: "12px 0 8px", fontSize: "clamp(1.8rem, 4vw, 2.5rem)" }}>{quiz.title}</h2>
-                <p style={{ margin: "0 0 16px", color: "#475569", lineHeight: 1.7 }}>{quiz.description}</p>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ background: "#eff6ff", borderRadius: 999, padding: "7px 12px", fontWeight: 700 }}>{quiz.publicationDate}</span>
-                </div>
-                <div style={{ marginTop: 18 }}>
-                  <Link
-                    href={`/quiz/${quiz.publicationDate}`}
-                    style={{
-                      textDecoration: "none",
-                      color: "#ffffff",
-                      background: "#2563eb",
-                      borderRadius: 999,
-                      padding: "12px 18px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 800,
-                    }}
-                  >
-                    Start quiz
-                  </Link>
-                </div>
-              </>
-            ) : (
+      <section className="daily-section" aria-labelledby="daily-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Fresh for curious minds</p>
+            <h2 id="daily-heading">Today&apos;s quiz</h2>
+          </div>
+          {topics.length > 0 && (
+            <div className="topic-list" aria-label="Quiz topics">
+              {topics.slice(0, 4).map((topic) => (
+                <span key={topic}>{topicLabels[topic] ?? topic}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <article className="daily-card">
+          {quiz ? (
+            <>
               <div>
-                <p style={{ margin: 0, color: "#475569" }}>No quiz is available today. Visit the archive for recent challenges.</p>
-                <div style={{ marginTop: 14 }}>
-                  <Link href="/archive" style={{ textDecoration: "none", color: "#2563eb", fontWeight: 700 }}>
-                    Open archive
-                  </Link>
-                </div>
+                <span className="date-pill">{quiz.publicationDate}</span>
+                <h3>{quiz.title}</h3>
+                <p>{quiz.description}</p>
               </div>
-            )}
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 18,
-            }}
-          >
-            {[
-              { title: "Reaction Time Challenge", description: "Test your reflexes with 5 fast, fair attempts.", duration: "2 min", href: "/games/reaction-time" },
-              { title: "Word Guess", description: "Solve today’s five-letter daily puzzle in six tries.", duration: "3 min", href: "/games/word-guess" },
-              { title: "Memory Match", description: "Flip, match, and clear the board as fast as you can.", duration: "4 min", href: "/games/memory-match" },
-            ].map((game) => (
-              <Link
-                key={game.title}
-                href={game.href}
-                style={{
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  background: "rgba(255,255,255,0.82)",
-                  border: "1px solid rgba(148,163,184,0.25)",
-                  borderRadius: 24,
-                  padding: 18,
-                  display: "block",
-                  boxShadow: "0 15px 32px rgba(15, 23, 42, 0.04)",
-                }}
-              >
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>{game.title}</div>
-                <p style={{ margin: "0 0 12px", color: "#475569", lineHeight: 1.6 }}>{game.description}</p>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "#2563eb", fontWeight: 800 }}>{game.duration}</span>
-                  <span style={{ fontWeight: 800 }}>Play now</span>
-                </div>
+              <Link className="daily-cta" href={`/quiz/${quiz.publicationDate}`}>
+                Start today&apos;s quiz <span aria-hidden="true">→</span>
               </Link>
-            ))}
-          </div>
-        )}
+            </>
+          ) : (
+            <>
+              <div>
+                <h3>No quiz is available today</h3>
+                <p>Browse published challenges and choose one to play.</p>
+              </div>
+              <Link className="daily-cta" href="/archive">
+                Browse quizzes <span aria-hidden="true">→</span>
+              </Link>
+            </>
+          )}
+        </article>
       </section>
+
+      <footer className="site-footer">
+        <Link href="/" className="brand">Qodlume<span className="brand-dot">.</span></Link>
+        <span>Take a quick break. Leave a little sharper.</span>
+        <Link href="/archive">Browse the quiz archive</Link>
+      </footer>
+
     </main>
   );
 }

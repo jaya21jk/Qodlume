@@ -55,6 +55,17 @@ export type DailyGameChallenge = {
   };
 }[DailyGameType];
 
+export type PublicDailyGameChallenge = {
+  [GameType in DailyGameType]: Omit<
+    Extract<DailyGameChallenge, { gameType: GameType }>,
+    "configuration"
+  > & {
+    configuration: GameType extends "word-guess"
+      ? Pick<WordGuessConfiguration, "attempts">
+      : DailyGameConfigurationByType[GameType];
+  };
+}[DailyGameType];
+
 export interface DailyGameValidationResult {
   valid: boolean;
   errors: string[];
@@ -68,53 +79,12 @@ export const DEFAULT_DAILY_GAME_CONFIGURATIONS: DailyGameConfigurationByType = {
     maximumDelayMs: 3400,
   },
   "word-guess": {
-    answer: "CRANE",
-    validWords: [
-      "APPLE",
-      "BEACH",
-      "BLOOM",
-      "BRAVE",
-      "CANDY",
-      "CHARM",
-      "CLOUD",
-      "CRANE",
-      "DREAM",
-      "EARTH",
-      "FLAME",
-      "GHOST",
-      "GRAPE",
-      "GROVE",
-      "HAPPY",
-      "JELLY",
-      "LEMON",
-      "LIGHT",
-      "MAGIC",
-      "NOBLE",
-      "OCEAN",
-      "PATCH",
-      "PEACE",
-      "PILOT",
-      "QUEST",
-      "RIVER",
-      "ROBOT",
-      "SHINE",
-      "SMILE",
-      "SOLAR",
-      "SPARK",
-      "STONE",
-      "TRAIL",
-      "UNITY",
-      "VALID",
-      "VIVID",
-      "WAVES",
-      "WHEEL",
-      "WORLD",
-      "YOUNG",
-    ],
+    answer: "",
+    validWords: [],
     attempts: 6,
   },
   "memory-match": {
     pairs: 6,
-    emojis: ["🍉", "🍋", "🍇", "🍒", "🍊", "🍓"],
+    emojis: ["🍉", "🍋", "🍇", "🍒", "🍊", "🍓", "🍍", "🥝", "🍏", "🍎", "🍐", "🍑"],
   },
 };

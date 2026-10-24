@@ -7,6 +7,7 @@ import {
   type DailyGameType,
   type DailyGameValidationResult,
   type MemoryMatchConfiguration,
+  type PublicDailyGameChallenge,
   type ReactionTimeConfiguration,
   type WordGuessConfiguration,
 } from "../types/daily-game-challenge";
@@ -52,6 +53,12 @@ function parseConfiguration(
   }
 
   if (gameType === "reaction-time") {
+    rejectUnknownKeys(
+      value,
+      ["attempts", "minimumDelayMs", "maximumDelayMs"],
+      "reaction-time configuration",
+      errors,
+    );
     const configuration = value as Partial<ReactionTimeConfiguration>;
     if (
       !Number.isInteger(configuration.attempts) ||
@@ -77,6 +84,12 @@ function parseConfiguration(
   }
 
   if (gameType === "word-guess") {
+    rejectUnknownKeys(
+      value,
+      ["answer", "validWords", "attempts"],
+      "word-guess configuration",
+      errors,
+    );
     const configuration = value as Partial<WordGuessConfiguration>;
     const answer =
       typeof configuration.answer === "string"
@@ -113,6 +126,7 @@ function parseConfiguration(
     };
   }
 
+  rejectUnknownKeys(value, ["pairs", "emojis"], "memory-match configuration", errors);
   const configuration = value as Partial<MemoryMatchConfiguration>;
   if (![6, 8, 12].includes(configuration.pairs as number)) {
     errors.push("memory-match configuration.pairs must be 6, 8, or 12.");
@@ -128,6 +142,17 @@ function parseConfiguration(
   return configuration as MemoryMatchConfiguration;
 }
 
+function rejectUnknownKeys(
+  value: Record<string, unknown>,
+  allowedKeys: string[],
+  field: string,
+  errors: string[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) errors.push(`${field}.${key} is not supported.`);
+  }
+}
+
 export function validateDailyGameChallenge(
   value: unknown,
 ): DailyGameValidationResult {
@@ -135,6 +160,25 @@ export function validateDailyGameChallenge(
   if (!isRecord(value)) {
     return { valid: false, errors: ["challenge must be an object."] };
   }
+  rejectUnknownKeys(
+    value,
+    [
+      "id",
+      "publicationDate",
+      "scheduledAt",
+      "timezone",
+      "status",
+      "gameType",
+      "title",
+      "description",
+      "configuration",
+      "createdAt",
+      "updatedAt",
+      "publishedAt",
+    ],
+    "challenge",
+    errors,
+  );
 
   const gameType = value.gameType;
   if (
@@ -252,4 +296,17 @@ export function isDailyChallengeAvailable(
       Boolean(challenge.scheduledAt) &&
       Date.parse(challenge.scheduledAt ?? "") <= now.getTime())
   );
+}
+
+export function toPublicDailyGameChallenge(
+  challenge: DailyGameChallenge | null,
+): PublicDailyGameChallenge | null {
+  if (!challenge) return null;
+  if (challenge.gameType === "word-guess") {
+    return {
+      ...challenge,
+      configuration: { attempts: challenge.configuration.attempts },
+    };
+  }
+  return challenge;
 }

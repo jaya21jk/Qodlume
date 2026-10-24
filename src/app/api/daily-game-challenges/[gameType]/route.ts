@@ -1,4 +1,5 @@
 import { getDatabase, getCurrentDailyGameChallenge } from "../../../../lib/quiz-database";
+import { toPublicDailyGameChallenge } from "../../../../lib/daily-game-challenges";
 import { DAILY_GAME_TYPES, type DailyGameType } from "../../../../types/daily-game-challenge";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,8 @@ export async function GET(_request: Request, context: RouteContext): Promise<Res
       await getDatabase(),
       gameType as DailyGameType,
     );
-    return Response.json({ challenge }, {
+    const publicChallenge = toPublicDailyGameChallenge(challenge);
+    return Response.json({ challenge: publicChallenge }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

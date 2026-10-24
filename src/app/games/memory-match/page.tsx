@@ -7,7 +7,7 @@ import {
   safeReadStorage,
   safeWriteStorage,
   shuffleArray,
-} from "../../../lib/game-logic";
+} from "../../../lib/game-client-utils";
 import { useDailyGameChallenge } from "../../../lib/use-daily-game-challenge";
 import { DEFAULT_DAILY_GAME_CONFIGURATIONS } from "../../../types/daily-game-challenge";
 

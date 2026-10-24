@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import type {
-  DailyGameChallenge,
+  PublicDailyGameChallenge,
   DailyGameType,
 } from "../types/daily-game-challenge";
 
 export function useDailyGameChallenge(gameType: DailyGameType): {
-  challenge: DailyGameChallenge | null;
+  challenge: PublicDailyGameChallenge | null;
   loading: boolean;
   error: string;
 } {
-  const [challenge, setChallenge] = useState<DailyGameChallenge | null>(null);
+  const [challenge, setChallenge] = useState<PublicDailyGameChallenge | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -20,7 +20,7 @@ export function useDailyGameChallenge(gameType: DailyGameType): {
     void fetch(`/api/daily-game-challenges/${gameType}`, { cache: "no-store" })
       .then(async (response) => {
         const result = (await response.json()) as {
-          challenge?: DailyGameChallenge | null;
+          challenge?: PublicDailyGameChallenge | null;
           error?: string;
         };
         if (!response.ok) {

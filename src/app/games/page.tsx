@@ -3,113 +3,142 @@ import Link from "next/link";
 const games = [
   {
     title: "Reaction Time Challenge",
-    description: "Measure how quickly you can react when the signal appears.",
-    duration: "2 min",
-    difficulty: "Fast",
+    description: "Test your reflexes! Click the button as soon as it appears and see how fast you can react.",
     href: "/games/reaction-time",
+    theme: "reaction",
+    illustration: (
+      <div className="game-art reaction-art" aria-hidden="true">
+        <span className="art-spark spark-a">✦</span>
+        <span className="art-spark spark-b">ϟ</span>
+        <div className="stopwatch">
+          <span className="stopwatch-top" />
+          <span className="clock-face"><span className="clock-hand" /></span>
+        </div>
+        <span className="reaction-button" />
+        <span className="reaction-hand">👆</span>
+      </div>
+    ),
+    features: ["5 attempts per game", "Track your best time", "Beat your personal record"],
   },
   {
     title: "Word Guess",
-    description: "Crack today’s five-letter puzzle with six careful guesses.",
-    duration: "3 min",
-    difficulty: "Daily",
+    description: "Guess the hidden word in limited attempts. Use the hints and test your vocabulary.",
     href: "/games/word-guess",
+    theme: "word",
+    illustration: (
+      <div className="game-art word-art" aria-hidden="true">
+        <span className="art-spark spark-a">✦</span>
+        <span className="word-bulb">💡</span>
+        <span className="letter-chip chip-h">H</span>
+        <span className="letter-chip chip-g">G</span>
+        <div className="word-row">
+          <span>W</span><span>O</span><span className="letter-green">R</span><span>D</span>
+        </div>
+        <div className="word-row word-row-second">
+          <span>G</span><span className="letter-green">U</span><span className="letter-green">E</span><span className="letter-green">S</span><span>S</span>
+        </div>
+      </div>
+    ),
+    features: ["6 attempts", "5-letter words", "Daily new challenge"],
   },
   {
     title: "Memory Match",
-    description: "Flip cards, match emojis, and beat your best board score.",
-    duration: "4 min",
-    difficulty: "Varied",
+    description: "Flip the cards, find the matching pairs and complete the board in the fewest moves possible.",
     href: "/games/memory-match",
+    theme: "memory",
+    illustration: (
+      <div className="game-art memory-art" aria-hidden="true">
+        <span className="art-spark spark-a">✦</span>
+        <span className="memory-card memory-star">★</span>
+        <span className="memory-card memory-fruit">🍓</span>
+        <span className="memory-card memory-face">🐻</span>
+        <span className="memory-card memory-heart">♥</span>
+        <span className="memory-card memory-blue">★</span>
+        <span className="memory-card memory-orange">★</span>
+      </div>
+    ),
+    features: ["3 difficulty levels", "Track your best time", "Improve your memory"],
   },
 ];
 
+const featureIcons = ["◉", "✦", "◆"];
+
 export default function GamesPage() {
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 18px 72px" }}>
-      <div style={{ marginBottom: 18 }}>
-        <Link href="/" style={{ textDecoration: "none", color: "#0f172a", fontWeight: 700 }}>
-          ← Back home
+    <main className="games-page">
+      <header className="games-header">
+        <Link href="/" className="games-brand" aria-label="Qodlume home">
+          Qodlume
         </Link>
-      </div>
-
-      <header
-        style={{
-          background: "linear-gradient(135deg, #ffffff 0%, #eef2ff 100%)",
-          border: "1px solid rgba(148,163,184,0.26)",
-          borderRadius: 28,
-          padding: "28px 20px",
-          marginBottom: 22,
-          boxShadow: "0 18px 48px rgba(15,23,42,0.04)",
-        }}
-      >
-        <p style={{ margin: 0, fontSize: 12, letterSpacing: 2, textTransform: "uppercase", fontWeight: 800, color: "#2563eb" }}>
-          Play
-        </p>
-        <h1 style={{ margin: "12px 0 8px", fontSize: "clamp(2.2rem, 6vw, 3.3rem)", lineHeight: 1.08 }}>
-          Quick Games
-        </h1>
-        <p style={{ margin: 0, color: "#475569", fontSize: "1.05rem", lineHeight: 1.7 }}>
-          Little challenges. Big brain energy.
-        </p>
+        <nav className="games-nav" aria-label="Main navigation">
+          <Link href="/">Home</Link>
+          <Link href="/archive">Quizzes</Link>
+          <Link href="/games" aria-current="page">Games</Link>
+          <a href="#about">About</a>
+        </nav>
+        <Link className="sign-in-link" href="/admin">Sign In</Link>
+        <details className="mobile-menu">
+          <summary aria-label="Open navigation menu"><span /><span /><span /></summary>
+          <nav aria-label="Mobile navigation">
+            <Link href="/">Home</Link>
+            <Link href="/archive">Quizzes</Link>
+            <Link href="/games" aria-current="page">Games</Link>
+            <a href="#about">About</a>
+            <Link href="/admin">Sign In</Link>
+          </nav>
+        </details>
       </header>
 
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: 18,
-        }}
-      >
-        {games.map((game) => (
-          <article
-            key={game.title}
-            style={{
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(148,163,184,0.28)",
-              borderRadius: 24,
-              padding: 20,
-              boxShadow: "0 18px 38px rgba(15,23,42,0.04)",
-              display: "grid",
-              gap: 14,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 30 }}>🎯</div>
-              <span style={{ background: "#eef2ff", color: "#312e81", borderRadius: 999, padding: "7px 10px", fontWeight: 800, fontSize: 12 }}>
-                {game.difficulty}
-              </span>
-            </div>
+      <section className="games-hero" aria-labelledby="games-heading">
+        <span className="hero-decoration target-decoration" aria-hidden="true">🎯</span>
+        <span className="hero-decoration brain-decoration" aria-hidden="true">🧠</span>
+        <span className="hero-decoration trophy-decoration" aria-hidden="true">🏆</span>
+        <div className="games-intro">
+          <p className="games-eyebrow">Daily brain games</p>
+          <h1 id="games-heading">Play. <span>Challenge.</span> <b>Improve.</b></h1>
+          <p>Quick, engaging games to test your speed, memory and word skills.</p>
+          <p>New daily challenges to keep your mind sharp!</p>
+        </div>
 
-            <div>
-              <h2 style={{ margin: "0 0 8px", fontSize: "1.5rem" }}>{game.title}</h2>
-              <p style={{ margin: 0, color: "#475569", lineHeight: 1.6 }}>{game.description}</p>
-            </div>
+        <div className="games-grid">
+          {games.map((game, index) => (
+            <article className={`game-card ${game.theme}`} key={game.title}>
+              {game.illustration}
+              <div className="game-card-body">
+                <h2>{game.title}</h2>
+                <p className="game-description">{game.description}</p>
+                <ul>
+                  {game.features.map((feature, featureIndex) => (
+                    <li key={feature}>
+                      <span className="feature-icon" aria-hidden="true">{featureIcons[featureIndex]}</span>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                <Link className="play-game-link" href={game.href}>
+                  Play Now <span aria-hidden="true">→</span>
+                </Link>
+              </div>
+            </article>
+          ))}
+        </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "#334155", fontWeight: 700 }}>
-              <span>{game.duration}</span>
-              <span>Progress saved locally</span>
-            </div>
+        <aside className="daily-banner">
+          <span className="daily-trophy" aria-hidden="true">🏆</span>
+          <div>
+            <h2>New Challenges Every Day</h2>
+            <p>Come back daily for fresh games and beat your personal bests!</p>
+          </div>
+          <div className="reset-time">
+            <span aria-hidden="true">▣</span>
+            <p>Daily challenges reset at<br /><strong>12:00 AM (Asia/Kolkata)</strong></p>
+          </div>
+        </aside>
+      </section>
 
-            <Link
-              href={game.href}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                textDecoration: "none",
-                color: "#ffffff",
-                background: "#0f172a",
-                borderRadius: 999,
-                minHeight: 46,
-                fontWeight: 800,
-                padding: "12px 16px",
-              }}
-            >
-              Play Now
-            </Link>
-          </article>
-        ))}
+      <section className="games-about" id="about">
+        <h2>Small games, sharper minds.</h2>
+        <p>Take a quick break with a daily word puzzle, a memory challenge, or a test of your reflexes.</p>
       </section>
     </main>
   );

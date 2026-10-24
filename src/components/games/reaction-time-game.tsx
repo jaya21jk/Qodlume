@@ -6,7 +6,7 @@ import {
   getKolkataDateKey,
   safeReadStorage,
   safeWriteStorage,
-} from "../../lib/game-logic";
+} from "../../lib/game-client-utils";
 import type { ReactionTimeConfiguration } from "../../types/daily-game-challenge";
 
 export function ReactionTimeGame({

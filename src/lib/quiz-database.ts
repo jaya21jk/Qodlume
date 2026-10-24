@@ -286,6 +286,23 @@ export async function saveDraftQuiz(
   quiz: Quiz,
   creator: string,
 ): Promise<void> {
+  await writeDraftQuiz(db, quiz, creator, true);
+}
+
+export async function createDraftQuiz(
+  db: D1Database,
+  quiz: Quiz,
+  creator: string,
+): Promise<void> {
+  await writeDraftQuiz(db, quiz, creator, false);
+}
+
+async function writeDraftQuiz(
+  db: D1Database,
+  quiz: Quiz,
+  creator: string,
+  allowOverwrite: boolean,
+): Promise<void> {
   const now = new Date().toISOString();
   const safeQuiz: Quiz = { ...quiz, status: "draft", scheduledAt: undefined, publishedAt: undefined };
   const questionJson = JSON.stringify(
@@ -302,7 +319,7 @@ export async function saveDraftQuiz(
           difficulty, estimated_duration_minutes, author, previous_version_id,
           scheduled_at, published_at, created_at, updated_at, created_by
         ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
+        ${allowOverwrite ? `ON CONFLICT(id) DO UPDATE SET
           version = excluded.version,
           publication_date = excluded.publication_date,
           timezone = excluded.timezone,
@@ -317,7 +334,7 @@ export async function saveDraftQuiz(
           scheduled_at = NULL,
           published_at = NULL,
           validation_errors_json = '[]',
-          updated_at = excluded.updated_at`,
+          updated_at = excluded.updated_at` : ""}`,
       )
       .bind(
         safeQuiz.id,

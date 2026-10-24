@@ -27,11 +27,19 @@ The server validates all content again before publication. Admin changes use sam
 
 Public quiz payloads omit answer keys and explanations. Answers are graded on the server and feedback is returned only after a complete submission.
 
+### Bulk quiz imports and scheduling
+
+In `/admin/import`, choose or paste either one quiz JSON object or an array of quiz objects in the existing quiz format. Use **Validate / preview** to see item-level validation and duplicate errors before importing. **Import drafts** stores accepted items as drafts and reports each created, duplicate, or failed item; existing quizzes and question IDs are never overwritten. Use the selection controls in the quiz list to schedule multiple drafts at once. Scheduling still requires a valid future time on each quiz's publication date in its configured timezone.
+
 ## Daily game challenges
 
 Manage Reaction Time Challenge, Word Guess, and Memory Match content at `/admin/daily-games`. Daily game configurations are stored in the `daily_game_challenges` D1 table, separate from game rendering and logic. Create drafts as JSON, preview and validate them, then publish immediately or schedule them for a local time on the configured publication date. Only draft or unpublished items can be edited; a unique game/date constraint prevents accidental replacement of an existing record. Unpublishing makes the challenge unavailable without deleting it.
 
 The public game endpoints choose the challenge matching the current `publicationDate` in that record’s IANA timezone. Scheduled challenges become published on the existing one-minute Worker Cron Trigger. The Word Guess answer is stored once in the challenge configuration, so every player receives the same answer for that date. Browser-local progress is keyed by game and publication date; game personal records remain separate from challenge configuration.
+
+### Bulk game imports and scheduling
+
+In `/admin/daily-games`, import one challenge JSON object or an array using the downloadable per-game templates and the **Validate / preview** control. Game fields are `id`, `publicationDate`, `scheduledAt` (when scheduling), `timezone`, `status`, `gameType`, `title`, `description`, and `configuration`. Reaction Time configuration contains `attempts`, `minimumDelayMs`, and `maximumDelayMs`; Word Guess contains the five-letter `answer`, six `attempts`, and a `validWords` array that includes the answer; Memory Match contains `pairs` and an `emojis` array with one unique emoji per pair. The default timezone is `Asia/Kolkata`. Imports are saved as drafts and never replace an existing game/date entry. Select drafts in the list to schedule them together; results include per-item failures and duplicates. Word Guess answers and accepted-word lists remain server-side and are omitted from public challenge responses.
 
 Apply the new schema before using the management UI:
 

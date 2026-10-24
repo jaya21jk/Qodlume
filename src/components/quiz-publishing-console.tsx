@@ -68,6 +68,17 @@ export function QuizPublishingConsole() {
   const [editor, setEditor] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
+  const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
+  const [bulkJson, setBulkJson] = useState("");
+  const [bulkPreview, setBulkPreview] = useState<Array<{
+    index: number;
+    valid: boolean;
+    id?: string;
+    title?: string;
+    publicationDate?: string;
+    errors: string[];
+  }>>([]);
+  const [bulkResults, setBulkResults] = useState<string[]>([]);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -253,6 +264,144 @@ export function QuizPublishingConsole() {
     URL.revokeObjectURL(url);
   };
 
+  const parseBulkQuizzes = (): unknown[] | null => {
+    try {
+      const parsed: unknown = JSON.parse(bulkJson);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      if (items.length === 0) throw new Error("Provide at least one quiz.");
+      if (items.length > 100) throw new Error("Imports are limited to 100 quizzes at a time.");
+
+      const seenIds = new Set<string>();
+      const seenDates = new Set<string>();
+      const seenQuestionIds = new Set<string>();
+      const preview = items.map((item, index) => {
+        const result = validateQuizJsonString(JSON.stringify(item), `bulk-item-${index + 1}.json`);
+        if (!result.valid || !result.parsedQuiz) {
+          return {
+            index,
+            valid: false,
+            errors: result.errors.map((issue) => `${issue.field ? `${issue.field}: ` : ""}${issue.message}`),
+          };
+        }
+
+        const quiz = result.parsedQuiz;
+        const errors: string[] = [];
+        if (seenIds.has(quiz.id) || quizzes.some((existing) => existing.id === quiz.id)) {
+          errors.push(`Duplicate quiz ID "${quiz.id}".`);
+        }
+        if (
+          seenDates.has(quiz.publicationDate) ||
+          quizzes.some((existing) => existing.publicationDate === quiz.publicationDate)
+        ) {
+          errors.push(`Publication date "${quiz.publicationDate}" already exists.`);
+        }
+        const questionConflict = quiz.questions.find((question) =>
+          seenQuestionIds.has(question.id),
+        );
+        if (questionConflict) errors.push(`Question ID "${questionConflict.id}" is duplicated in this batch.`);
+        quiz.questions.forEach((question) => seenQuestionIds.add(question.id));
+        seenIds.add(quiz.id);
+        seenDates.add(quiz.publicationDate);
+        return {
+          index,
+          valid: errors.length === 0,
+          id: quiz.id,
+          title: quiz.title,
+          publicationDate: quiz.publicationDate,
+          errors,
+        };
+      });
+      setBulkPreview(preview);
+      setBulkResults([]);
+      setError("");
+      return items;
+    } catch (parseError) {
+      setBulkPreview([]);
+      setError(parseError instanceof Error ? parseError.message : "Invalid JSON.");
+      return null;
+    }
+  };
+
+  const importBulkQuizzes = async () => {
+    const items = parseBulkQuizzes();
+    if (!items) return;
+    setBusy("bulk-import");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/quizzes/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import", quizzes: items }),
+      });
+      const result = await response.json() as {
+        error?: string;
+        results?: Array<{ index: number; id?: string; publicationDate?: string; status: string; errors?: string[] }>;
+      };
+      if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk import failed.");
+      setBulkResults(result.results.map((item) =>
+        `Item ${item.index + 1}${item.id ? ` · ${item.id} · ${item.publicationDate}` : ""}: ${item.status}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
+      ));
+      await loadQuizzes();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Bulk import failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const bulkScheduleQuizzes = async () => {
+    const items = selectedForSchedule.map((id) => {
+      const quiz = quizzes.find((entry) => entry.id === id);
+      const localValue = scheduleInputs[id];
+      if (!quiz || !localValue || !localValue.startsWith(`${quiz.publicationDate}T`)) {
+        return { id, scheduledAt: "", invalid: true };
+      }
+      const converted = dateTimeLocalToUtc(localValue, quiz.timezone);
+      if ("error" in converted || Date.parse(converted.scheduledAt) <= Date.now()) {
+        return { id, scheduledAt: "", invalid: true };
+      }
+      return { id, scheduledAt: converted.scheduledAt, invalid: false };
+    });
+    if (items.length === 0 || items.some((item) => item.invalid)) {
+      setError("Select draft quizzes and choose a future schedule time on each quiz date.");
+      return;
+    }
+    setBusy("bulk-schedule");
+    setError("");
+    try {
+      const response = await fetch("/api/admin/quizzes/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "schedule",
+          items: items.map(({ id, scheduledAt }) => ({ id, scheduledAt })),
+        }),
+      });
+      const result = await response.json() as {
+        error?: string;
+        results?: Array<{ id: string; status: string; error?: string }>;
+      };
+      if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk scheduling failed.");
+      setBulkResults(result.results.map((item) => `${item.id}: ${item.status}${item.error ? ` — ${item.error}` : ""}`));
+      setSelectedForSchedule([]);
+      await loadQuizzes();
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Bulk scheduling failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const downloadQuizTemplate = () => {
+    const blob = new Blob([JSON.stringify(javaSampleQuiz, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "qodlume-quiz-template.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section style={{ display: "grid", gap: 24 }}>
       <div style={panelStyle}>
@@ -269,10 +418,33 @@ export function QuizPublishingConsole() {
         {error && <p role="alert" style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</p>}
         {!loading && quizzes.length === 0 ? <p>No quizzes yet. Create a draft or import a JSON file.</p> : null}
         <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+          <button
+            type="button"
+            disabled={selectedForSchedule.length === 0 || busy !== ""}
+            onClick={() => void bulkScheduleQuizzes()}
+            style={buttonStyle}
+          >
+            Schedule selected ({selectedForSchedule.length})
+          </button>
           {quizzes.map((quiz) => (
             <article key={quiz.id} style={quizCardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
+                  {(quiz.status === "draft" || quiz.status === "validated") && (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedForSchedule.includes(quiz.id)}
+                        onChange={(event) => setSelectedForSchedule((current) =>
+                          event.target.checked
+                            ? [...current, quiz.id]
+                            : current.filter((id) => id !== quiz.id),
+                        )}
+                        aria-label={`Select ${quiz.title} for bulk scheduling`}
+                      />
+                      Select to schedule
+                    </label>
+                  )}
                   <h3 style={{ margin: "0 0 6px" }}>{quiz.title}</h3>
                   <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
                     {quiz.publicationDate} · {quiz.topic} · {quiz.questionCount} questions
@@ -327,6 +499,78 @@ export function QuizPublishingConsole() {
             </article>
           ))}
         </div>
+      </div>
+
+      <div style={panelStyle}>
+        <h2 style={{ marginTop: 0 }}>Bulk quiz import</h2>
+        <p style={{ color: "#475569", lineHeight: 1.6 }}>
+          Paste one quiz or a JSON array, or select a JSON file. Valid entries are saved as drafts; existing IDs or publication dates are never replaced.
+        </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <label style={buttonStyle}>
+            Choose JSON file
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  setBulkJson(await file.text());
+                  setBulkPreview([]);
+                  setBulkResults([]);
+                }
+                event.target.value = "";
+              }}
+              style={{ display: "none" }}
+            />
+          </label>
+          <button type="button" onClick={downloadQuizTemplate} style={buttonStyle}>Download quiz template</button>
+        </div>
+        <textarea
+          value={bulkJson}
+          onChange={(event) => {
+            setBulkJson(event.target.value);
+            setBulkPreview([]);
+            setBulkResults([]);
+          }}
+          aria-label="Paste quiz JSON for bulk import"
+          placeholder='{"id":"quiz-id", ...} or [{...}, {...}]'
+          spellCheck={false}
+          style={{
+            width: "100%",
+            minHeight: 220,
+            boxSizing: "border-box",
+            padding: 16,
+            border: "1px solid #cbd5e1",
+            borderRadius: 12,
+            fontFamily: "Consolas, monospace",
+            fontSize: 13,
+          }}
+        />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkQuizzes()} style={buttonStyle}>
+            Validate / preview
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes()} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Importing…" : "Import drafts"}
+          </button>
+        </div>
+        {bulkPreview.length > 0 && (
+          <ol style={{ display: "grid", gap: 8, paddingLeft: 24 }}>
+            {bulkPreview.map((item) => (
+              <li key={item.index} style={{ color: item.valid ? "#15803d" : "#b91c1c" }}>
+                {item.title ?? `Item ${item.index + 1}`} {item.id ? `· ${item.id} · ${item.publicationDate}` : ""}
+                {item.valid ? " — valid" : ` — ${item.errors.join(" ")}`}
+              </li>
+            ))}
+          </ol>
+        )}
+        {bulkResults.length > 0 && (
+          <div aria-live="polite" style={{ marginTop: 12 }}>
+            <strong>Bulk operation results</strong>
+            {bulkResults.map((item) => <p key={item} style={{ margin: "6px 0", color: "#334155" }}>{item}</p>)}
+          </div>
+        )}
       </div>
 
       <div style={panelStyle}>

@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  evaluateWordGuess,
   getKolkataDateKey,
   safeReadStorage,
   safeWriteStorage,
-} from "../../../lib/game-logic";
+} from "../../../lib/game-client-utils";
 import { GameShell } from "../../../components/game-shell";
 import { useDailyGameChallenge } from "../../../lib/use-daily-game-challenge";
-import { DEFAULT_DAILY_GAME_CONFIGURATIONS } from "../../../types/daily-game-challenge";
 
 const MAX_ATTEMPTS = 6;
 const WORD_LENGTH = 5;
@@ -25,15 +23,6 @@ function getKeyboardLayout() {
 
 export default function WordGuessPage() {
   const { challenge, loading, error } = useDailyGameChallenge("word-guess");
-  const wordConfiguration =
-    challenge?.gameType === "word-guess"
-      ? challenge.configuration
-      : DEFAULT_DAILY_GAME_CONFIGURATIONS["word-guess"];
-  const answer = wordConfiguration.answer;
-  const validWords = useMemo(
-    () => new Set(wordConfiguration.validWords.map((word) => word.toUpperCase())),
-    [wordConfiguration.validWords],
-  );
   const progressKey = `qodlume:word-guess:${challenge?.publicationDate ?? getKolkataDateKey()}`;
   const [board, setBoard] = useState<string[][]>(Array.from({ length: MAX_ATTEMPTS }, () => [...EMPTY_ROW]));
   const [feedback, setFeedback] = useState<Array<Array<"correct" | "present" | "absent">>>(
@@ -45,7 +34,9 @@ export default function WordGuessPage() {
   const [gameOver, setGameOver] = useState(false);
   const [message, setMessage] = useState("Type a five-letter word and press Enter.");
   const [status, setStatus] = useState<Record<string, "correct" | "present" | "absent">>({});
+  const [submitting, setSubmitting] = useState(false);
   const [loadedProgressKey, setLoadedProgressKey] = useState("");
+  const submittingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -140,45 +131,86 @@ export default function WordGuessPage() {
 
   const canSubmit = currentColumn === WORD_LENGTH && !gameOver;
 
-  const revealBoard = useCallback((guess: string) => {
-    const evaluated = evaluateWordGuess(guess, answer);
-    const nextBoard = board.map((row, rowIndex) => (rowIndex === currentRow ? [...guess.split("")] : row));
-    const nextFeedback = feedback.map((row, rowIndex) => (rowIndex === currentRow ? [...evaluated] : row));
-    setBoard(nextBoard);
-    setFeedback(nextFeedback);
-    const nextStatus = { ...status };
-    for (let index = 0; index < evaluated.length; index += 1) {
-      const letter = guess[index];
-      const current = nextStatus[letter] ?? "absent";
-      if (evaluated[index] === "correct" || (evaluated[index] === "present" && current !== "correct")) {
-        nextStatus[letter] = evaluated[index];
-      } else if (evaluated[index] === "absent" && current !== "correct" && current !== "present") {
-        nextStatus[letter] = "absent";
+  const revealBoard = useCallback(async (guess: string) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/daily-game-challenges/word-guess/guess", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guess }),
+      });
+      const result = (await response.json()) as {
+        feedback?: Array<"correct" | "present" | "absent">;
+        won?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.feedback) {
+        setMessage(result.error ?? "Unable to check this guess. Try again.");
+        return;
       }
-    }
-    setStatus(nextStatus);
+      const evaluated = result.feedback;
+      const nextBoard = board.map((row, rowIndex) =>
+        rowIndex === currentRow ? [...guess.split("")] : row,
+      );
+      const nextFeedback = feedback.map((row, rowIndex) =>
+        rowIndex === currentRow ? [...evaluated] : row,
+      );
+      setBoard(nextBoard);
+      setFeedback(nextFeedback);
+      const nextStatus = { ...status };
+      for (let index = 0; index < evaluated.length; index += 1) {
+        const letter = guess[index];
+        const current = nextStatus[letter] ?? "absent";
+        if (
+          evaluated[index] === "correct" ||
+          (evaluated[index] === "present" && current !== "correct")
+        ) {
+          nextStatus[letter] = evaluated[index];
+        } else if (
+          evaluated[index] === "absent" &&
+          current !== "correct" &&
+          current !== "present"
+        ) {
+          nextStatus[letter] = "absent";
+        }
+      }
+      setStatus(nextStatus);
 
-    if (guess === answer) {
-      setHasWon(true);
-      setGameOver(true);
-      setMessage("You solved it! Great work.");
-      return;
-    }
+      if (result.won) {
+        setHasWon(true);
+        setGameOver(true);
+        setMessage("You solved it! Great work.");
+        return;
+      }
 
-    if (currentRow === MAX_ATTEMPTS - 1) {
-      setGameOver(true);
-      setMessage(`Out of attempts. The word was ${answer}.`);
-      return;
-    }
+      if (currentRow === MAX_ATTEMPTS - 1) {
+        setGameOver(true);
+        setMessage("Out of attempts. Come back for the next daily word.");
+        return;
+      }
 
-    const nextRow = currentRow + 1;
-    setCurrentRow(nextRow);
-    setCurrentColumn(0);
-    setMessage("Keep going — you’ve got this.");
-  }, [answer, board, currentRow, feedback, status]);
+      const nextRow = currentRow + 1;
+      setCurrentRow(nextRow);
+      setCurrentColumn(0);
+      setMessage("Keep going — you’ve got this.");
+    } catch {
+      setMessage("Unable to check this guess. Check your connection and try again.");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }, [board, currentRow, feedback, status]);
 
   const handleKeyPress = useCallback((key: string) => {
-    if (gameOver) return;
+    if (
+      !challenge ||
+      challenge.gameType !== "word-guess" ||
+      gameOver ||
+      submitting ||
+      submittingRef.current
+    ) return;
 
     if (key === "ENTER") {
       if (!canSubmit) {
@@ -191,12 +223,7 @@ export default function WordGuessPage() {
         setMessage("Complete the row before submitting.");
         return;
       }
-      if (!validWords.has(guess)) {
-        setMessage("That word is not in today’s word list.");
-        return;
-      }
-
-      revealBoard(guess);
+      void revealBoard(guess);
       return;
     }
 
@@ -216,20 +243,24 @@ export default function WordGuessPage() {
     nextBoard[currentRow][currentColumn] = key.toUpperCase();
     setBoard(nextBoard);
     setCurrentColumn((value) => value + 1);
-  }, [board, canSubmit, currentColumn, currentRow, gameOver, revealBoard, validWords]);
+  }, [board, canSubmit, challenge, currentColumn, currentRow, gameOver, revealBoard, submitting]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === "Enter") {
-        handleKeyPress("ENTER");
+        event.preventDefault();
+        void handleKeyPress("ENTER");
         return;
       }
       if (event.key === "Backspace") {
-        handleKeyPress("⌫");
+        event.preventDefault();
+        void handleKeyPress("⌫");
         return;
       }
       if (/^[a-z]$/i.test(event.key)) {
-        handleKeyPress(event.key.toUpperCase());
+        event.preventDefault();
+        void handleKeyPress(event.key.toUpperCase());
       }
     };
 
@@ -261,7 +292,10 @@ export default function WordGuessPage() {
     >
       {loading ? <p aria-live="polite">Loading today&apos;s challenge…</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      {!loading && !error ? (
+      {!loading && !error && !challenge ? (
+        <p role="status">No Word Guess challenge is published for today. Please check back later.</p>
+      ) : null}
+      {!loading && !error && challenge?.gameType === "word-guess" ? (
       <div style={{ display: "grid", gap: 18 }}>
         <div
           aria-live="polite"
@@ -277,26 +311,49 @@ export default function WordGuessPage() {
           {message}
         </div>
 
+        <p style={{ margin: 0, color: "#475569", textAlign: "center" }}>
+          Type letters with your keyboard. Press Enter to check a five-letter guess and Backspace to edit.
+        </p>
+
         <div style={{ display: "grid", gap: 10, justifyItems: "center" }}>
           {boardRows.map((row, rowIndex) => (
             <div key={`row-${rowIndex}`} style={{ display: "grid", gridTemplateColumns: `repeat(${WORD_LENGTH}, minmax(0, 1fr))`, gap: 8, width: "min(100%, 360px)" }}>
               {row.map((cell, columnIndex) => {
                 const state = feedback[rowIndex]?.[columnIndex] ?? "absent";
                 const hasLetter = Boolean(cell);
-                const tone = state === "correct" ? "#16a34a" : state === "present" ? "#f59e0b" : hasLetter ? "#0f172a" : "#ffffff";
+                const isSubmitted =
+                  rowIndex < currentRow || (gameOver && rowIndex === currentRow);
+                const tone =
+                  isSubmitted && state === "correct"
+                    ? "#16a34a"
+                    : isSubmitted && state === "present"
+                      ? "#f59e0b"
+                      : isSubmitted
+                        ? "#64748b"
+                        : "#ffffff";
                 return (
                   <div
                     key={`cell-${rowIndex}-${columnIndex}`}
-                    aria-label={cell ? `Row ${rowIndex + 1}, Column ${columnIndex + 1}, ${cell}` : `Row ${rowIndex + 1}, Column ${columnIndex + 1}, empty`}
+                    aria-label={
+                      cell
+                        ? `Row ${rowIndex + 1}, Column ${columnIndex + 1}, ${cell}${
+                            isSubmitted ? `, ${state === "correct" ? "correct position" : state === "present" ? "in word, different position" : "not in word"}` : ""
+                          }`
+                        : `Row ${rowIndex + 1}, Column ${columnIndex + 1}, empty`
+                    }
                     style={{
                       width: "100%",
                       aspectRatio: "1 / 1",
                       display: "grid",
                       placeItems: "center",
                       borderRadius: 14,
-                      border: state === "correct" ? "1px solid #16a34a" : state === "present" ? "1px solid #f59e0b" : "1px solid rgba(148,163,184,0.35)",
+                      border: isSubmitted
+                        ? `1px solid ${tone}`
+                        : hasLetter
+                          ? "2px solid #64748b"
+                          : "1px solid rgba(148,163,184,0.35)",
                       background: tone,
-                      color: state === "absent" && !hasLetter ? "#0f172a" : "#ffffff",
+                      color: isSubmitted ? "#ffffff" : "#0f172a",
                       fontWeight: 900,
                       fontSize: "clamp(1.1rem, 4vw, 1.8rem)",
                       textTransform: "uppercase",
@@ -310,26 +367,56 @@ export default function WordGuessPage() {
           ))}
         </div>
 
+        <div
+          aria-label="Guess color guide"
+          style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap", color: "#334155", fontSize: 14 }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: 4, background: "#16a34a" }} />
+            Correct letter and position
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: 4, background: "#f59e0b" }} />
+            Correct letter, different position
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: 4, background: "#64748b" }} />
+            Letter not in the word
+          </span>
+        </div>
+
         <div style={{ display: "grid", gap: 10, justifyItems: "center" }}>
           <div style={{ display: "grid", gap: 8, width: "min(100%, 420px)" }}>
             {getKeyboardLayout().map((row, rowIndex) => (
               <div key={`keyboard-row-${rowIndex}`} style={{ display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
                 {row.map((key) => {
-                  const state = status[key] ?? "absent";
+                  const state = status[key];
                   const filled = key === "ENTER" || key === "⌫";
-                  const background =
-                    state === "correct"
+                  const background = filled
+                    ? "#0f172a"
+                    : state === "correct"
                       ? "#16a34a"
                       : state === "present"
                         ? "#f59e0b"
-                        : state === "absent" && !filled
-                          ? "#e2e8f0"
-                          : "#0f172a";
+                        : state === "absent" ? "#64748b" : "#e2e8f0";
                   return (
                     <button
                       key={key}
                       type="button"
                       onClick={() => handleKeyPress(key)}
+                      aria-label={
+                        key === "ENTER"
+                          ? "Enter guess"
+                          : key === "⌫"
+                            ? "Delete letter"
+                            : state === "correct"
+                              ? `${key}, correct position`
+                              : state === "present"
+                                ? `${key}, in word but different position`
+                                : state === "absent"
+                                  ? `${key}, not in word`
+                                  : key
+                      }
                       style={{
                         minWidth: key === "ENTER" || key === "⌫" ? 72 : 32,
                         minHeight: 46,
@@ -337,11 +424,12 @@ export default function WordGuessPage() {
                         border: "none",
                         borderRadius: 12,
                         background,
-                        color: filled || state !== "absent" ? "#ffffff" : "#0f172a",
+                        color: filled || status[key] ? "#ffffff" : "#0f172a",
                         fontWeight: 800,
                         cursor: "pointer",
                         fontSize: 14,
                       }}
+                      disabled={submitting || gameOver}
                     >
                       {key}
                     </button>
@@ -387,7 +475,14 @@ export default function WordGuessPage() {
           </div>
         </div>
 
-        <input ref={inputRef} aria-label="Word guess input" value="" readOnly style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+        <input
+          ref={inputRef}
+          aria-label="Word Guess keyboard input"
+          value=""
+          readOnly
+          tabIndex={-1}
+          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+        />
       </div>
       ) : null}
     </GameShell>

@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  evaluateWordGuess,
+} from "../src/lib/game-logic";
+import {
   getDateInTimezone,
   isDailyChallengeAvailable,
+  toPublicDailyGameChallenge,
   validateDailyGameChallenge,
   validateDailySchedule,
 } from "../src/lib/daily-game-challenges";
@@ -112,6 +116,7 @@ test("Word Guess answer is canonicalized and remains part of the validated daily
       validWords: ["crane", "APPLE"],
     },
   });
+
   const firstPlayerConfig = validateDailyGameChallenge(candidate);
   const secondPlayerConfig = validateDailyGameChallenge(candidate);
   assert.equal(firstPlayerConfig.valid, true);
@@ -126,6 +131,31 @@ test("Word Guess answer is canonicalized and remains part of the validated daily
     firstPlayerConfig.challenge?.configuration,
     secondPlayerConfig.challenge?.configuration,
   );
+});
+
+test("public Word Guess challenge responses do not expose the answer or accepted words", () => {
+  const publicChallenge = toPublicDailyGameChallenge(makeChallenge());
+  assert.equal(publicChallenge?.gameType, "word-guess");
+  assert.deepEqual(publicChallenge?.configuration, { attempts: 6 });
+  assert.equal("answer" in (publicChallenge?.configuration ?? {}), false);
+  assert.equal("validWords" in (publicChallenge?.configuration ?? {}), false);
+});
+
+test("Word Guess feedback distinguishes correct position and misplaced letters", () => {
+  assert.deepEqual(evaluateWordGuess("CRATE", "CRANE"), [
+    "correct",
+    "correct",
+    "correct",
+    "absent",
+    "correct",
+  ]);
+  assert.deepEqual(evaluateWordGuess("EARTH", "CRANE"), [
+    "present",
+    "present",
+    "present",
+    "absent",
+    "absent",
+  ]);
 });
 
 test("challenge validator rejects malformed game settings and invalid dates", () => {
