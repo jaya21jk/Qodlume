@@ -256,11 +256,16 @@ export default function WordGuessPage() {
             void revealBoard(currentGuess);
           }}
         >
-        <div style={{ display: "grid", gap: 10, justifyItems: "center" }}>
+        <div style={{ display: "grid", gap: 10, justifyItems: "center", width: "100%" }}>
           {board.map((row, rowIndex) => (
             <div
               key={`row-${rowIndex}`}
               className={rowIndex === currentRow && !gameOver ? "word-guess-active-row" : undefined}
+              onClick={() => {
+                if (rowIndex === currentRow && !gameOver && !submitting) {
+                  inputRef.current?.focus({ preventScroll: true });
+                }
+              }}
               style={{ position: "relative", display: "grid", gridTemplateColumns: `repeat(${WORD_LENGTH}, minmax(0, 1fr))`, gap: 8, width: "min(100%, 360px)" }}
             >
               {row.map((cell, columnIndex) => {

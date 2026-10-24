@@ -852,6 +852,11 @@
   box-shadow: 0 0 0 3px rgba(103, 85, 232, 0.14);
 }
 
+.word-guess-active-row {
+  cursor: text;
+  touch-action: manipulation;
+}
+
 .word-guess-board-input {
   position: absolute;
   inset: 0;
@@ -868,7 +873,7 @@
   color: transparent;
   caret-color: transparent;
   cursor: text;
-  opacity: 0.01;
+  opacity: 1;
   font-size: 1rem;
 }
 

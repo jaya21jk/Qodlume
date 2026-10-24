@@ -16,6 +16,8 @@ export function GameShell({
     <main
       className="game-shell"
       style={{
+        boxSizing: "border-box",
+        width: "100%",
         maxWidth: 1200,
         margin: "0 auto",
         padding: "24px 16px 72px",
