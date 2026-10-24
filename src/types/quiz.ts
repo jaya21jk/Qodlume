@@ -126,7 +126,7 @@ export interface QuizSummary {
   updatedAt?: string;
 }
 
-export interface AdminQuizListItem extends Omit<QuizSummary, 'questionIds'> {
+export interface AdminQuizListItem extends QuizSummary {
   questionCount: number;
   scheduledAt?: string;
   publishedAt?: string;

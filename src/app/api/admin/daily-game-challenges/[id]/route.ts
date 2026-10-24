@@ -107,8 +107,9 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
       if (challenge.status !== "draft" && challenge.status !== "unpublished") {
         return adminJson({ error: "Only draft or unpublished challenges can be scheduled." }, 409);
       }
-      if (!("scheduledAt" in body) || typeof body.scheduledAt !== "string") {
-        return adminJson({ error: "A scheduledAt timestamp is required." }, 400);
+      const requestedAt = "scheduledAt" in body ? body.scheduledAt : undefined;
+      if (requestedAt !== undefined && typeof requestedAt !== "string") {
+        return adminJson({ error: "scheduledAt must be an ISO timestamp with a UTC offset." }, 400);
       }
       const validation = validateDailyGameChallenge(challenge);
       if (!validation.valid) {
@@ -117,7 +118,7 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
       const schedule = validateDailySchedule(
         challenge.publicationDate,
         challenge.timezone,
-        body.scheduledAt,
+        typeof requestedAt === "string" ? requestedAt : challenge.scheduledAt,
       );
       if ("error" in schedule) return adminJson({ error: schedule.error }, 400);
       return adminJson({

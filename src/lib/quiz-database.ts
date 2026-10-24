@@ -304,7 +304,7 @@ async function writeDraftQuiz(
   allowOverwrite: boolean,
 ): Promise<void> {
   const now = new Date().toISOString();
-  const safeQuiz: Quiz = { ...quiz, status: "draft", scheduledAt: undefined, publishedAt: undefined };
+  const safeQuiz: Quiz = { ...quiz, status: "draft", publishedAt: undefined };
   const questionJson = JSON.stringify(
     safeQuiz.questions.map((question) => ({
       ...question,
@@ -318,7 +318,7 @@ async function writeDraftQuiz(
           id, version, publication_date, timezone, status, title, description, topic,
           difficulty, estimated_duration_minutes, author, previous_version_id,
           scheduled_at, published_at, created_at, updated_at, created_by
-        ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
         ${allowOverwrite ? `ON CONFLICT(id) DO UPDATE SET
           version = excluded.version,
           publication_date = excluded.publication_date,
@@ -331,10 +331,11 @@ async function writeDraftQuiz(
           estimated_duration_minutes = excluded.estimated_duration_minutes,
           author = excluded.author,
           previous_version_id = excluded.previous_version_id,
-          scheduled_at = NULL,
+          scheduled_at = excluded.scheduled_at,
           published_at = NULL,
           validation_errors_json = '[]',
-          updated_at = excluded.updated_at` : ""}`,
+          updated_at = excluded.updated_at
+          WHERE quizzes.status IN ('draft', 'validated')` : ""}`,
       )
       .bind(
         safeQuiz.id,
@@ -348,11 +349,19 @@ async function writeDraftQuiz(
         safeQuiz.estimatedDurationMinutes,
         safeQuiz.author ?? null,
         safeQuiz.previousVersionId ?? null,
+        safeQuiz.scheduledAt ?? null,
         now,
         now,
         creator,
       ),
-    db.prepare("DELETE FROM questions WHERE quiz_id = ?").bind(safeQuiz.id),
+    db
+      .prepare(
+        `DELETE FROM questions
+         WHERE quiz_id = ? AND EXISTS (
+           SELECT 1 FROM quizzes WHERE id = ? AND status = 'draft'
+         )`,
+      )
+      .bind(safeQuiz.id, safeQuiz.id),
     db
       .prepare(
         `INSERT INTO questions (
@@ -371,9 +380,10 @@ async function writeDraftQuiz(
           json(json_extract(question.value, '$.references')),
           json(json_extract(question.value, '$.tags')),
           json_extract(question.value, '$.correctOptionId')
-        FROM json_each(?) AS question`,
+        FROM json_each(?) AS question
+        WHERE EXISTS (SELECT 1 FROM quizzes WHERE id = ? AND status = 'draft')`,
       )
-      .bind(safeQuiz.id, questionJson),
+      .bind(safeQuiz.id, questionJson, safeQuiz.id),
     db
       .prepare(
         `INSERT INTO question_options (
@@ -388,25 +398,37 @@ async function writeDraftQuiz(
                     json_extract(question.value, '$.correctOptionId') THEN 1 ELSE 0 END,
           json_extract(option.value, '$.code')
         FROM json_each(?) AS question,
-             json_each(question.value, '$.options') AS option`,
+             json_each(question.value, '$.options') AS option
+        WHERE EXISTS (SELECT 1 FROM quizzes WHERE id = ? AND status = 'draft')`,
       )
-      .bind(questionJson),
+      .bind(questionJson, safeQuiz.id),
   ]);
   results.forEach(assertSuccess);
+  if (allowOverwrite && results[0]?.meta.changes === 0) {
+    throw new Error("Only draft or validated quizzes can be edited.");
+  }
 }
 
 export async function setQuizStatus(
   db: D1Database,
   id: string,
   status: PublicationStatus,
-  options: { scheduledAt?: string; validationIssues?: ValidationIssue[] } = {},
+  options: {
+    scheduledAt?: string;
+    validationIssues?: ValidationIssue[];
+    expectedStatus?: PublicationStatus;
+    preserveScheduledAt?: boolean;
+  } = {},
 ): Promise<void> {
+  if (status === "scheduled" && !options.scheduledAt) {
+    throw new Error("A scheduled quiz must have a resolved scheduledAt timestamp.");
+  }
   const now = new Date().toISOString();
   const result = await db
     .prepare(
       `UPDATE quizzes
        SET status = ?,
-           scheduled_at = ?,
+           scheduled_at = CASE WHEN ? = 1 THEN scheduled_at ELSE ? END,
            published_at = CASE
              WHEN ? = 'published' THEN COALESCE(published_at, ?)
              WHEN ? = 'draft' THEN NULL
@@ -414,10 +436,11 @@ export async function setQuizStatus(
            END,
            validation_errors_json = ?,
            updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND (? IS NULL OR status = ?)`,
     )
     .bind(
       status,
+      options.preserveScheduledAt ? 1 : 0,
       options.scheduledAt ?? null,
       status,
       now,
@@ -425,10 +448,16 @@ export async function setQuizStatus(
       JSON.stringify(options.validationIssues ?? []),
       now,
       id,
+      options.expectedStatus ?? null,
+      options.expectedStatus ?? null,
     )
     .run();
   assertSuccess(result);
-  if (result.meta.changes === 0) throw new Error("Quiz not found.");
+  if (result.meta.changes === 0) {
+    const current = await getAdminQuizById(db, id);
+    if (!current) throw new Error("Quiz not found.");
+    throw new Error(`Quiz status changed from ${options.expectedStatus ?? "the expected state"} to ${current.status}.`);
+  }
 }
 
 export async function publishDueQuizzes(
@@ -536,11 +565,12 @@ export async function createDailyGameChallengeDraft(
       `INSERT INTO daily_game_challenges (
         id, publication_date, scheduled_at, timezone, status, game_type, title,
         description, configuration_json, created_at, updated_at, published_at, created_by
-      ) VALUES (?, ?, NULL, ?, 'draft', ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
     .bind(
       id,
       challenge.publicationDate,
+      challenge.scheduledAt ?? null,
       challenge.timezone,
       challenge.gameType,
       challenge.title,
@@ -566,7 +596,7 @@ export async function updateDailyGameChallengeDraft(
     .prepare(
       `UPDATE daily_game_challenges
        SET timezone = ?, title = ?, description = ?, configuration_json = ?,
-           scheduled_at = NULL, status = 'draft', updated_at = ?
+           scheduled_at = ?, status = 'draft', updated_at = ?
        WHERE id = ? AND status IN ('draft', 'unpublished')`,
     )
     .bind(
@@ -574,6 +604,7 @@ export async function updateDailyGameChallengeDraft(
       challenge.title,
       challenge.description,
       JSON.stringify(challenge.configuration),
+      challenge.scheduledAt ?? null,
       now,
       challenge.id,
     )
@@ -595,6 +626,9 @@ export async function setDailyGameChallengeStatus(
   status: DailyGameStatus,
   scheduledAt?: string,
 ): Promise<DailyGameChallenge> {
+  if (status === "scheduled" && !scheduledAt) {
+    throw new Error("A scheduled daily game challenge must have a resolved scheduledAt timestamp.");
+  }
   const now = new Date().toISOString();
   const allowedSourceStatuses =
     status === "published" || status === "scheduled"

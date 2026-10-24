@@ -10,12 +10,17 @@ import {
 import {
   canEditQuiz,
   dateTimeLocalToUtc,
+  dateTimeUtcToLocal,
+  findQuizImportBatchConflicts,
   isQuizPublic,
   normalizeScheduledPublicationTime,
+  resolveImportPublication,
+  validateScheduledPublicationDate,
   validateQuizForPublishing,
 } from "../src/lib/quiz-publishing";
 import type { Quiz } from "../src/types/quiz";
 import { getSiteUrl } from "../src/lib/config";
+import { validateQuizJsonString } from "../src/lib/quiz-validator";
 
 const makeQuiz = (overrides: Partial<Quiz> = {}): Quiz => ({
   id: "publishing-test-quiz",
@@ -52,6 +57,13 @@ test("publication validation accepts a valid quiz and rejects an invalid answer 
         correctOptionId: "missing",
       },
     ],
+  });
+
+  test("scheduled quiz imports may omit scheduledAt so publication defaults to midnight", () => {
+    const quiz = makeQuiz({ status: "scheduled", scheduledAt: undefined });
+    const report = validateQuizJsonString(JSON.stringify(quiz));
+    assert.equal(report.valid, true);
+    assert.equal(report.parsedQuiz?.scheduledAt, undefined);
   });
   const report = validateQuizForPublishing(invalid);
   assert.equal(report.valid, false);
@@ -95,6 +107,101 @@ test("scheduled publication requires a future time on the quiz date in its timez
   );
 });
 
+test("schedule by publication date resolves to midnight in the configured timezone", () => {
+  assert.deepEqual(
+    normalizeScheduledPublicationTime(
+      "2026-10-25",
+      "Asia/Kolkata",
+      undefined,
+      Date.parse("2026-10-24T00:00:00.000Z"),
+    ),
+    { scheduledAt: "2026-10-24T18:30:00.000Z" },
+  );
+});
+
+test("explicit schedule offsets are preserved as UTC instants and checked against local date", () => {
+  assert.deepEqual(
+    validateScheduledPublicationDate(
+      "2026-10-25",
+      "Asia/Kolkata",
+      "2026-10-25T00:00:00+05:30",
+    ),
+    { scheduledAt: "2026-10-24T18:30:00.000Z" },
+  );
+  assert.ok("error" in validateScheduledPublicationDate(
+    "2026-10-25",
+    "Asia/Kolkata",
+    "2026-10-24T17:30:00Z",
+  ));
+  assert.ok("error" in validateScheduledPublicationDate(
+    "2026-10-25",
+    "Asia/Kolkata",
+    "2026-02-30T00:00:00+05:30",
+  ));
+  assert.ok("error" in validateScheduledPublicationDate(
+    "2026-10-25",
+    "Asia/Kolkata",
+    "2026-10-25T00:00:00",
+  ));
+});
+
+test("bulk import mode keeps drafts as drafts and resolves every scheduled date independently", () => {
+  const now = Date.parse("2026-10-20T00:00:00.000Z");
+  assert.deepEqual(
+    resolveImportPublication("draft", "2026-10-19", "Asia/Kolkata", undefined, now),
+    { status: "draft" },
+  );
+  assert.deepEqual(
+    resolveImportPublication("schedule", "2026-10-25", "Asia/Kolkata", undefined, now),
+    { status: "scheduled", scheduledAt: "2026-10-24T18:30:00.000Z" },
+  );
+  assert.deepEqual(
+    resolveImportPublication("schedule", "2026-10-26", "Asia/Kolkata", undefined, now),
+    { status: "scheduled", scheduledAt: "2026-10-25T18:30:00.000Z" },
+  );
+  assert.ok("error" in resolveImportPublication(
+    "schedule",
+    "2026-10-25",
+    "Asia/Kolkata",
+    "not-a-timestamp",
+    now,
+  ));
+});
+
+test("bulk quiz import detects repeated record IDs, dates, and question IDs", () => {
+  const seen = {
+    ids: new Set<string>(),
+    publicationDates: new Set<string>(),
+    questionIds: new Set<string>(),
+  };
+  const first = makeQuiz();
+  assert.deepEqual(findQuizImportBatchConflicts(first, seen), []);
+  assert.deepEqual(
+    findQuizImportBatchConflicts(
+      makeQuiz({
+        publicationDate: "2026-10-23",
+        questions: [{ ...first.questions[0], id: "second-question" }],
+      }),
+      seen,
+    ),
+    ['Duplicate quiz ID "publishing-test-quiz" in this import.'],
+  );
+  assert.deepEqual(
+    findQuizImportBatchConflicts(
+      makeQuiz({
+        id: "another-quiz",
+        publicationDate: "2026-10-23",
+        questions: [{ ...first.questions[0], id: "publishing-test-question" }],
+      }),
+      seen,
+    ),
+    [
+      'Duplicate publication date "2026-10-23" in this import.',
+      'Question ID "publishing-test-question" is duplicated within this import.',
+    ],
+  );
+});
+
 test("schedule input is converted from the quiz timezone to UTC", () => {
   assert.deepEqual(
     dateTimeLocalToUtc("2026-10-23T00:03", "Asia/Kolkata"),
@@ -102,6 +209,14 @@ test("schedule input is converted from the quiz timezone to UTC", () => {
   );
   assert.ok("error" in dateTimeLocalToUtc("not-a-date", "Asia/Kolkata"));
   assert.ok("error" in dateTimeLocalToUtc("2026-10-23T00:03", "Not/A_Zone"));
+});
+
+test("stored UTC publication times display in the configured local timezone", () => {
+  assert.equal(
+    dateTimeUtcToLocal("2026-10-24T18:30:00.000Z", "Asia/Kolkata"),
+    "2026-10-25T00:00",
+  );
+  assert.equal(dateTimeUtcToLocal("not-a-timestamp", "Asia/Kolkata"), undefined);
 });
 
 test("edit permissions and public visibility are status-based", () => {

@@ -175,10 +175,91 @@ test("challenge validator rejects malformed game settings and invalid dates", ()
   assert.ok(invalid.errors.some((error) => error.includes("attempts")));
 });
 
-test("scheduled challenges require their UTC activation timestamp", () => {
-  const validation = validateDailyGameChallenge(
-    makeChallenge({ status: "scheduled" }),
+test("scheduled game imports without a time resolve to midnight IST", () => {
+  const challenge = makeChallenge({
+    publicationDate: "2026-10-25",
+    status: "scheduled",
+    scheduledAt: undefined,
+  });
+  const validation = validateDailyGameChallenge(challenge);
+  assert.equal(validation.valid, true);
+  assert.deepEqual(
+    validateDailySchedule(
+      challenge.publicationDate,
+      challenge.timezone,
+      undefined,
+      new Date("2026-10-24T00:00:00.000Z"),
+    ),
+    { scheduledAt: "2026-10-24T18:30:00.000Z" },
   );
-  assert.equal(validation.valid, false);
-  assert.ok(validation.errors.includes("scheduledAt is required when status is scheduled."));
+});
+
+test("scheduled game imports validate explicit offsets and reject malformed or conflicting times", () => {
+  const explicit = makeChallenge({
+    publicationDate: "2026-10-25",
+    status: "scheduled",
+    scheduledAt: "2026-10-25T00:15:00+05:30",
+  });
+  assert.equal(validateDailyGameChallenge(explicit).valid, true);
+  assert.deepEqual(
+    validateDailySchedule(
+      explicit.publicationDate,
+      explicit.timezone,
+      explicit.scheduledAt,
+      new Date("2026-10-24T00:00:00.000Z"),
+    ),
+    { scheduledAt: "2026-10-24T18:45:00.000Z" },
+  );
+  assert.equal(
+    validateDailyGameChallenge({
+      ...explicit,
+      scheduledAt: "2026-02-30T00:00:00+05:30",
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateDailyGameChallenge({
+      ...explicit,
+      scheduledAt: "2026-10-24T17:30:00Z",
+    }).valid,
+    false,
+  );
+});
+
+test("scheduled games are not visible early and drafts stay hidden after their date", () => {
+  const publicationDate = "2026-10-25";
+  const notYetMidnight = new Date("2026-10-24T18:29:59.999Z");
+  const atMidnight = new Date("2026-10-24T18:30:00.000Z");
+  assert.equal(
+    isDailyChallengeAvailable(
+      makeChallenge({
+        publicationDate,
+        status: "scheduled",
+        scheduledAt: "2026-10-24T18:30:00.000Z",
+      }),
+      notYetMidnight,
+    ),
+    false,
+  );
+  assert.equal(
+    isDailyChallengeAvailable(
+      makeChallenge({
+        publicationDate,
+        status: "scheduled",
+        scheduledAt: "2026-10-24T18:30:00.000Z",
+      }),
+      atMidnight,
+    ),
+    true,
+  );
+  assert.equal(
+    isDailyChallengeAvailable(
+      makeChallenge({
+        publicationDate: "2026-10-24",
+        status: "draft",
+      }),
+      new Date("2026-10-25T00:00:00.000Z"),
+    ),
+    false,
+  );
 });

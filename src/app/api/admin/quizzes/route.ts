@@ -1,4 +1,7 @@
-import { validateQuizForPublishing } from "../../../../lib/quiz-publishing";
+import {
+  validateQuizForPublishing,
+  validateScheduledPublicationDate,
+} from "../../../../lib/quiz-publishing";
 import {
   adminJson,
   authorizeAdminRead,
@@ -6,9 +9,9 @@ import {
   readJsonBody,
 } from "../../../../lib/admin-api";
 import {
+  createDraftQuiz,
   getDatabase,
   listAdminQuizzes,
-  saveDraftQuiz,
 } from "../../../../lib/quiz-database";
 import type { Quiz } from "../../../../types/quiz";
 
@@ -47,6 +50,15 @@ export async function POST(request: Request): Promise<Response> {
   if (!report.valid || !report.parsedQuiz) {
     return adminJson({ error: "Quiz validation failed.", validation: report }, 422);
   }
+  if (report.parsedQuiz.scheduledAt) {
+    const schedule = validateScheduledPublicationDate(
+      report.parsedQuiz.publicationDate,
+      report.parsedQuiz.timezone,
+      report.parsedQuiz.scheduledAt,
+    );
+    if ("error" in schedule) return adminJson({ error: schedule.error }, 400);
+    report.parsedQuiz.scheduledAt = schedule.scheduledAt;
+  }
 
   try {
     const db = await getDatabase();
@@ -55,7 +67,7 @@ export async function POST(request: Request): Promise<Response> {
       .first()) {
       return adminJson({ error: "A quiz with this ID or publication date already exists." }, 409);
     }
-    await saveDraftQuiz(db, report.parsedQuiz, "admin");
+    await createDraftQuiz(db, { ...report.parsedQuiz, status: "draft" }, "admin");
     return adminJson({ quiz: { ...report.parsedQuiz, status: "draft" } }, 201);
   } catch (error) {
     console.error("Quiz import failed.", error);

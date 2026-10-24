@@ -7,6 +7,7 @@ import {
   validateDailyGameChallenge,
   validateDailySchedule,
 } from "../../../../../lib/daily-game-challenges";
+import { resolveImportPublication } from "../../../../../lib/quiz-publishing";
 import {
   createDailyGameChallengeDraft,
   getAdminDailyGameChallenge,
@@ -34,6 +35,10 @@ export async function POST(request: Request): Promise<Response> {
     if (body.challenges.length > 100) {
       return adminJson({ error: "Bulk imports are limited to 100 challenges." }, 413);
     }
+    const mode = "mode" in body ? body.mode : "draft";
+    if (mode !== "draft" && mode !== "schedule") {
+      return adminJson({ error: "Import mode must be draft or schedule." }, 400);
+    }
 
     let db: Awaited<ReturnType<typeof getDatabase>>;
     try {
@@ -48,6 +53,9 @@ export async function POST(request: Request): Promise<Response> {
       publicationDate?: string;
       gameType?: string;
       status: "created" | "failed" | "duplicate";
+      publicationStatus?: "draft" | "scheduled";
+      timezone?: string;
+      scheduledAt?: string;
       challenge?: DailyGameChallenge;
       errors?: string[];
     }> = [];
@@ -60,6 +68,22 @@ export async function POST(request: Request): Promise<Response> {
       }
 
       const challenge = validation.challenge;
+      const publication = resolveImportPublication(
+        mode,
+        challenge.publicationDate,
+        challenge.timezone,
+        challenge.scheduledAt,
+      );
+      if ("error" in publication) {
+        results.push({
+          index,
+          publicationDate: challenge.publicationDate,
+          gameType: challenge.gameType,
+          status: "failed",
+          errors: [publication.error],
+        });
+        continue;
+      }
       const duplicateKey = `${challenge.gameType}:${challenge.publicationDate}`;
       if (seen.has(duplicateKey)) {
         results.push({
@@ -73,6 +97,7 @@ export async function POST(request: Request): Promise<Response> {
       }
       seen.add(duplicateKey);
 
+      let draftCreated = false;
       try {
         const existing = await db
           .prepare("SELECT id FROM daily_game_challenges WHERE game_type = ? AND publication_date = ? LIMIT 1")
@@ -89,12 +114,32 @@ export async function POST(request: Request): Promise<Response> {
           continue;
         }
         const saved = await createDailyGameChallengeDraft(db, challenge, "admin");
+        draftCreated = true;
+        if (publication.status === "scheduled") {
+          await setDailyGameChallengeStatus(
+            db,
+            saved.id,
+            "scheduled",
+            publication.scheduledAt,
+          );
+        }
         results.push({
           index,
           publicationDate: challenge.publicationDate,
           gameType: challenge.gameType,
           status: "created",
-          challenge: saved,
+          publicationStatus: publication.status,
+          timezone: challenge.timezone,
+          scheduledAt: publication.status === "scheduled"
+            ? publication.scheduledAt
+            : challenge.scheduledAt,
+          challenge: {
+            ...saved,
+            status: publication.status,
+            scheduledAt: publication.status === "scheduled"
+              ? publication.scheduledAt
+              : saved.scheduledAt,
+          },
         });
       } catch (error) {
         console.error("Bulk daily game challenge import item failed.", { index, error });
@@ -103,10 +148,13 @@ export async function POST(request: Request): Promise<Response> {
           publicationDate: challenge.publicationDate,
           gameType: challenge.gameType,
           status: "failed",
+          publicationStatus: draftCreated ? "draft" : undefined,
           errors: [
             error instanceof Error && /constraint/i.test(error.message)
               ? "A challenge for this game and date already exists."
-              : "Unable to persist this challenge.",
+              : draftCreated
+                ? `Saved as a draft, but scheduling failed: ${error instanceof Error ? error.message : "Unable to schedule publication."}`
+                : "Unable to persist this challenge.",
           ],
         });
       }
@@ -136,10 +184,9 @@ export async function POST(request: Request): Promise<Response> {
         item === null ||
         !("id" in item) ||
         typeof item.id !== "string" ||
-        !("scheduledAt" in item) ||
-        typeof item.scheduledAt !== "string"
+        ("scheduledAt" in item && item.scheduledAt !== undefined && typeof item.scheduledAt !== "string")
       ) {
-        results.push({ id: "", status: "failed", error: "Each item requires id and scheduledAt." });
+        results.push({ id: "", status: "failed", error: "Each item requires an id and optional scheduledAt." });
         continue;
       }
       try {
@@ -153,7 +200,7 @@ export async function POST(request: Request): Promise<Response> {
         const schedule = validateDailySchedule(
           challenge.publicationDate,
           challenge.timezone,
-          item.scheduledAt,
+          typeof item.scheduledAt === "string" ? item.scheduledAt : challenge.scheduledAt,
         );
         if ("error" in schedule) throw new Error(schedule.error);
         await setDailyGameChallengeStatus(db, item.id, "scheduled", schedule.scheduledAt);

@@ -7,6 +7,7 @@ import {
 import {
   canEditQuiz,
   normalizeScheduledPublicationTime,
+  validateScheduledPublicationDate,
   validateQuizForPublishing,
 } from "../../../../../lib/quiz-publishing";
 import {
@@ -57,6 +58,15 @@ export async function PUT(request: Request, context: RouteContext): Promise<Resp
   if (!report.valid || !report.parsedQuiz) {
     return adminJson({ error: "Quiz validation failed.", validation: report }, 422);
   }
+  if (report.parsedQuiz.scheduledAt) {
+    const schedule = validateScheduledPublicationDate(
+      report.parsedQuiz.publicationDate,
+      report.parsedQuiz.timezone,
+      report.parsedQuiz.scheduledAt,
+    );
+    if ("error" in schedule) return adminJson({ error: schedule.error }, 400);
+    report.parsedQuiz.scheduledAt = schedule.scheduledAt;
+  }
 
   try {
     const db = await getDatabase();
@@ -69,6 +79,9 @@ export async function PUT(request: Request, context: RouteContext): Promise<Resp
     return adminJson({ quiz: { ...report.parsedQuiz, status: "draft" } });
   } catch (error) {
     console.error("Quiz update failed.", error);
+    if (error instanceof Error && /only draft or validated/i.test(error.message)) {
+      return adminJson({ error: error.message }, 409);
+    }
     if (error instanceof Error && /constraint/i.test(error.message)) {
       return adminJson({ error: "This quiz date or question IDs are already in use." }, 409);
     }
@@ -104,7 +117,11 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
         const validation = validateQuizForPublishing(quiz);
         validationIssues = validation.errors;
         if (!validation.valid) {
-          await setQuizStatus(db, id, quiz.status, { validationIssues });
+          await setQuizStatus(db, id, quiz.status, {
+            validationIssues,
+            expectedStatus: quiz.status,
+            preserveScheduledAt: true,
+          });
           return adminJson({
             error: "Quiz cannot be published until validation errors are fixed.",
             validation,
@@ -113,13 +130,17 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
         if (body.action === "publish") {
           status = "published";
         } else {
-          if (!("scheduledAt" in body) || typeof body.scheduledAt !== "string") {
-            return adminJson({ error: "A scheduledAt UTC timestamp is required." }, 400);
+          const requestedAt = "scheduledAt" in body ? body.scheduledAt : undefined;
+          if (
+            requestedAt !== undefined &&
+            typeof requestedAt !== "string"
+          ) {
+            return adminJson({ error: "scheduledAt must be an ISO timestamp with a UTC offset." }, 400);
           }
           const schedule = normalizeScheduledPublicationTime(
             quiz.publicationDate,
             quiz.timezone,
-            body.scheduledAt,
+            typeof requestedAt === "string" ? requestedAt : quiz.scheduledAt,
           );
           if ("error" in schedule) return adminJson({ error: schedule.error }, 400);
           scheduledAt = schedule.scheduledAt;
@@ -149,7 +170,11 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
         return adminJson({ error: "Unsupported quiz action." }, 400);
     }
 
-    await setQuizStatus(db, id, status, { scheduledAt, validationIssues });
+    await setQuizStatus(db, id, status, {
+      scheduledAt,
+      validationIssues,
+      expectedStatus: quiz.status,
+    });
     return adminJson({
       quiz: {
         ...quiz,

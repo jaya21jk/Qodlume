@@ -588,17 +588,6 @@ function validateQuizObject(
     }
   }
 
-  if (status === 'scheduled' && !scheduledAt) {
-    pushError({
-      code: 'MISSING_SCHEDULED_AT',
-      severity: 'error',
-      message: `Scheduled quiz "${quizId ?? 'unknown'}" must include a scheduledAt timestamp.`,
-      fileName,
-      quizId,
-      field: 'scheduledAt',
-    });
-  }
-
   const seenQuestionIds = new Set<string>();
   const questions: QuizQuestion[] = [];
   for (const question of rawQuiz.questions as unknown[]) {

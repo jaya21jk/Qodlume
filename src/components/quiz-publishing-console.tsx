@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import javaSampleQuiz from "../../java-quiz-sample.json";
 import { QuizPlayer } from "./quiz-player";
 import { validateQuizJsonString } from "../lib/quiz-validator";
-import { dateTimeLocalToUtc } from "../lib/quiz-publishing";
+import {
+  dateTimeLocalToUtc,
+  dateTimeUtcToLocal,
+  findQuizImportBatchConflicts,
+  resolveImportPublication,
+  validateScheduledPublicationDate,
+  validateQuizForPublishing,
+} from "../lib/quiz-publishing";
 import type {
   AdminQuizListItem,
   Quiz,
@@ -70,12 +77,16 @@ export function QuizPublishingConsole() {
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
   const [bulkJson, setBulkJson] = useState("");
+  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | null>(null);
   const [bulkPreview, setBulkPreview] = useState<Array<{
     index: number;
     valid: boolean;
     id?: string;
     title?: string;
     publicationDate?: string;
+    status?: "draft" | "scheduled";
+    timezone?: string;
+    scheduledAt?: string;
     errors: string[];
   }>>([]);
   const [bulkResults, setBulkResults] = useState<string[]>([]);
@@ -169,6 +180,68 @@ export function QuizPublishingConsole() {
     }
   };
 
+  const scheduleEditor = async () => {
+    const validation = validateEditor(editor);
+    if (!validation.valid || !validation.parsedQuiz) {
+      setError("Fix the validation errors before scheduling this quiz.");
+      return;
+    }
+    const quiz = validation.parsedQuiz;
+    const publication = resolveImportPublication(
+      "schedule",
+      quiz.publicationDate,
+      quiz.timezone,
+      quiz.scheduledAt,
+    );
+    if ("error" in publication) {
+      setError(publication.error);
+      return;
+    }
+    if (publication.status !== "scheduled") return;
+
+    const endpoint = editingId
+      ? `/api/admin/quizzes/${encodeURIComponent(editingId)}`
+      : "/api/admin/quizzes";
+    setBusy("schedule-editor");
+    setError("");
+    try {
+      const saveResponse = await fetch(endpoint, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quiz: { ...quiz, status: "draft", scheduledAt: undefined } }),
+      });
+      const saved = await saveResponse.json() as ApiError & { quiz?: Quiz };
+      if (!saveResponse.ok || !saved.quiz) {
+        if (saved.validation) setReport(saved.validation);
+        throw new Error(saved.error ?? "Unable to save quiz before scheduling.");
+      }
+
+      const scheduleResponse = await fetch(
+        `/api/admin/quizzes/${encodeURIComponent(saved.quiz.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "schedule",
+            scheduledAt: publication.scheduledAt,
+          }),
+        },
+      );
+      const result = await scheduleResponse.json() as ApiError & { quiz?: Quiz };
+      if (!scheduleResponse.ok || !result.quiz) {
+        throw new Error(`Quiz saved as a draft, but scheduling failed: ${result.error ?? "Unable to schedule publication."}`);
+      }
+      setEditingId(null);
+      setEditor(JSON.stringify(result.quiz, null, 2));
+      await loadQuizzes();
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Unable to schedule quiz.");
+      await loadQuizzes();
+    } finally {
+      setBusy("");
+    }
+  };
+
   const runAction = async (quiz: AdminQuizListItem, action: string) => {
     if (
       (action === "archive" || action === "unpublish") &&
@@ -178,11 +251,9 @@ export function QuizPublishingConsole() {
     }
     let scheduledAt: string | undefined;
     if (action === "schedule") {
-      const scheduleInput = scheduleInputs[quiz.id];
-      if (!scheduleInput) {
-        setError(`Choose a schedule time for "${quiz.title}" first.`);
-        return;
-      }
+      const scheduleInput = scheduleInputs[quiz.id] ??
+        (quiz.scheduledAt ? dateTimeUtcToLocal(quiz.scheduledAt, quiz.timezone) : undefined) ??
+        `${quiz.publicationDate}T00:00`;
       if (!scheduleInput.startsWith(`${quiz.publicationDate}T`)) {
         setError(
           `Choose a time on ${quiz.publicationDate} in ${quiz.timezone}; scheduled quizzes must publish on their quiz date.`,
@@ -264,18 +335,29 @@ export function QuizPublishingConsole() {
     URL.revokeObjectURL(url);
   };
 
-  const parseBulkQuizzes = (): unknown[] | null => {
+  const parseBulkQuizzes = (mode: "draft" | "schedule" = "draft"): unknown[] | null => {
     try {
       const parsed: unknown = JSON.parse(bulkJson);
       const items = Array.isArray(parsed) ? parsed : [parsed];
       if (items.length === 0) throw new Error("Provide at least one quiz.");
       if (items.length > 100) throw new Error("Imports are limited to 100 quizzes at a time.");
 
-      const seenIds = new Set<string>();
-      const seenDates = new Set<string>();
-      const seenQuestionIds = new Set<string>();
+      const seenImportKeys = {
+        ids: new Set<string>(),
+        publicationDates: new Set<string>(),
+        questionIds: new Set<string>(),
+      };
       const preview = items.map((item, index) => {
-        const result = validateQuizJsonString(JSON.stringify(item), `bulk-item-${index + 1}.json`);
+        const structural = validateQuizJsonString(JSON.stringify(item), `bulk-item-${index + 1}.json`);
+        if (!structural.valid || !structural.parsedQuiz) {
+          return {
+            index,
+            valid: false,
+            errors: structural.errors.map((issue) => `${issue.field ? `${issue.field}: ` : ""}${issue.message}`),
+          };
+        }
+
+        const result = validateQuizForPublishing(structural.parsedQuiz);
         if (!result.valid || !result.parsedQuiz) {
           return {
             index,
@@ -283,35 +365,52 @@ export function QuizPublishingConsole() {
             errors: result.errors.map((issue) => `${issue.field ? `${issue.field}: ` : ""}${issue.message}`),
           };
         }
-
         const quiz = result.parsedQuiz;
-        const errors: string[] = [];
-        if (seenIds.has(quiz.id) || quizzes.some((existing) => existing.id === quiz.id)) {
+        const errors = findQuizImportBatchConflicts(quiz, seenImportKeys);
+        if (quiz.scheduledAt) {
+          const scheduleDate = validateScheduledPublicationDate(
+            quiz.publicationDate,
+            quiz.timezone,
+            quiz.scheduledAt,
+          );
+          if ("error" in scheduleDate) errors.push(scheduleDate.error);
+          else quiz.scheduledAt = scheduleDate.scheduledAt;
+        }
+        const publication = resolveImportPublication(
+          mode,
+          quiz.publicationDate,
+          quiz.timezone,
+          quiz.scheduledAt,
+        );
+        if ("error" in publication) errors.push(publication.error);
+        if (quizzes.some((existing) => existing.id === quiz.id)) {
           errors.push(`Duplicate quiz ID "${quiz.id}".`);
         }
         if (
-          seenDates.has(quiz.publicationDate) ||
           quizzes.some((existing) => existing.publicationDate === quiz.publicationDate)
         ) {
           errors.push(`Publication date "${quiz.publicationDate}" already exists.`);
         }
         const questionConflict = quiz.questions.find((question) =>
-          seenQuestionIds.has(question.id),
+          quizzes.some((existing) => existing.questionIds.includes(question.id)),
         );
-        if (questionConflict) errors.push(`Question ID "${questionConflict.id}" is duplicated in this batch.`);
-        quiz.questions.forEach((question) => seenQuestionIds.add(question.id));
-        seenIds.add(quiz.id);
-        seenDates.add(quiz.publicationDate);
+        if (questionConflict) errors.push(`Question ID "${questionConflict.id}" is duplicated or already exists.`);
         return {
           index,
           valid: errors.length === 0,
           id: quiz.id,
           title: quiz.title,
           publicationDate: quiz.publicationDate,
+          status: "error" in publication ? undefined : publication.status,
+          timezone: quiz.timezone,
+          scheduledAt: !("error" in publication) && publication.status === "scheduled"
+            ? publication.scheduledAt
+            : quiz.scheduledAt,
           errors,
         };
       });
       setBulkPreview(preview);
+      setBulkPreviewMode(mode);
       setBulkResults([]);
       setError("");
       return items;
@@ -322,24 +421,42 @@ export function QuizPublishingConsole() {
     }
   };
 
-  const importBulkQuizzes = async () => {
-    const items = parseBulkQuizzes();
-    if (!items) return;
+  const importBulkQuizzes = async (mode: "draft" | "schedule") => {
+    if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
+      setError(`Validate a preview for "${mode === "draft" ? "Save all as Draft" : "Schedule valid records"}" before confirming.`);
+      return;
+    }
+    const validCount = bulkPreview.filter((item) => item.valid).length;
+    if (validCount === 0) {
+      setError("There are no valid quizzes to import.");
+      return;
+    }
+    if (!window.confirm(
+      `${mode === "draft" ? "Save" : "Schedule"} ${validCount} valid quiz${validCount === 1 ? "" : "zes"}? Invalid records will be skipped and reported.`,
+    )) return;
+    let items: unknown[];
+    try {
+      const parsed: unknown = JSON.parse(bulkJson);
+      items = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      setError("The import JSON changed. Validate it again before confirming.");
+      return;
+    }
     setBusy("bulk-import");
     setError("");
     try {
       const response = await fetch("/api/admin/quizzes/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", quizzes: items }),
+        body: JSON.stringify({ action: "import", mode, quizzes: items }),
       });
       const result = await response.json() as {
         error?: string;
-        results?: Array<{ index: number; id?: string; publicationDate?: string; status: string; errors?: string[] }>;
+        results?: Array<{ index: number; id?: string; publicationDate?: string; status: string; publicationStatus?: string; scheduledAt?: string; timezone?: string; errors?: string[] }>;
       };
       if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk import failed.");
       setBulkResults(result.results.map((item) =>
-        `Item ${item.index + 1}${item.id ? ` · ${item.id} · ${item.publicationDate}` : ""}: ${item.status}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
+        `Item ${item.index + 1}${item.id ? ` · ${item.id} · ${item.publicationDate}` : ""}: ${item.publicationStatus ?? item.status}${item.scheduledAt ? ` · ${formatTimestamp(item.scheduledAt, item.timezone ?? "Asia/Kolkata")}` : ""}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
       ));
       await loadQuizzes();
     } catch (importError) {
@@ -352,8 +469,12 @@ export function QuizPublishingConsole() {
   const bulkScheduleQuizzes = async () => {
     const items = selectedForSchedule.map((id) => {
       const quiz = quizzes.find((entry) => entry.id === id);
-      const localValue = scheduleInputs[id];
-      if (!quiz || !localValue || !localValue.startsWith(`${quiz.publicationDate}T`)) {
+      const localValue = quiz
+        ? scheduleInputs[id] ??
+          (quiz.scheduledAt ? dateTimeUtcToLocal(quiz.scheduledAt, quiz.timezone) : undefined) ??
+          `${quiz.publicationDate}T00:00`
+        : "";
+      if (!quiz || !localValue.startsWith(`${quiz.publicationDate}T`)) {
         return { id, scheduledAt: "", invalid: true };
       }
       const converted = dateTimeLocalToUtc(localValue, quiz.timezone);
@@ -402,6 +523,15 @@ export function QuizPublishingConsole() {
     URL.revokeObjectURL(url);
   };
 
+  const schedulePreview = report?.parsedQuiz
+    ? resolveImportPublication(
+        "schedule",
+        report.parsedQuiz.publicationDate,
+        report.parsedQuiz.timezone,
+        report.parsedQuiz.scheduledAt,
+      )
+    : null;
+
   return (
     <section style={{ display: "grid", gap: 24 }}>
       <div className="admin-content-panel" style={panelStyle}>
@@ -447,8 +577,8 @@ export function QuizPublishingConsole() {
                   )}
                   <h3 style={{ margin: "0 0 6px" }}>{quiz.title}</h3>
                   <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
-                    {quiz.publicationDate} · {quiz.topic} · {quiz.questionCount} questions
-                    {quiz.scheduledAt ? ` · Scheduled ${formatTimestamp(quiz.scheduledAt, quiz.timezone)}` : ""}
+                    {quiz.publicationDate} · {quiz.topic} · {quiz.questionCount} questions · {quiz.timezone}
+                    {quiz.scheduledAt ? ` · ${quiz.status === "draft" || quiz.status === "validated" ? "Configured" : "Scheduled"} ${formatTimestamp(quiz.scheduledAt, quiz.timezone)}` : ""}
                     {quiz.publishedAt ? ` · Published ${formatTimestamp(quiz.publishedAt, quiz.timezone)}` : ""}
                   </p>
                 </div>
@@ -466,7 +596,7 @@ export function QuizPublishingConsole() {
                   <>
                     <button type="button" onClick={() => editQuiz(quiz)} style={buttonStyle}>Edit / preview</button>
                     <button type="button" disabled={busy !== ""} onClick={() => void runAction(quiz, "publish")} style={buttonStyle}>Publish now</button>
-                    <button type="button" disabled={busy !== ""} onClick={() => void runAction(quiz, "schedule")} style={buttonStyle}>Schedule</button>
+                    <button type="button" disabled={busy !== ""} onClick={() => void runAction(quiz, "schedule")} style={buttonStyle}>Schedule Publication</button>
                   </>
                 )}
                 {(quiz.status === "published" || quiz.status === "scheduled") && (
@@ -484,7 +614,9 @@ export function QuizPublishingConsole() {
                   Schedule time ({quiz.timezone})
                   <input
                     type="datetime-local"
-                    value={scheduleInputs[quiz.id] ?? ""}
+                    value={scheduleInputs[quiz.id] ??
+                      (quiz.scheduledAt ? dateTimeUtcToLocal(quiz.scheduledAt, quiz.timezone) : undefined) ??
+                      `${quiz.publicationDate}T00:00`}
                     onChange={(event) => {
                       setScheduleInputs((current) => ({
                         ...current,
@@ -504,7 +636,7 @@ export function QuizPublishingConsole() {
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Bulk quiz import</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
-          Paste one quiz or a JSON array, or select a JSON file. Valid entries are saved as drafts; existing IDs or publication dates are never replaced.
+          Preview each record before choosing Save all as Draft or Schedule valid records. Scheduled records without an explicit time use midnight in their timezone; drafts never publish automatically. Existing IDs or publication dates are never replaced.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
           <label style={buttonStyle}>
@@ -517,6 +649,7 @@ export function QuizPublishingConsole() {
                 if (file) {
                   setBulkJson(await file.text());
                   setBulkPreview([]);
+                  setBulkPreviewMode(null);
                   setBulkResults([]);
                 }
                 event.target.value = "";
@@ -531,6 +664,7 @@ export function QuizPublishingConsole() {
           onChange={(event) => {
             setBulkJson(event.target.value);
             setBulkPreview([]);
+            setBulkPreviewMode(null);
             setBulkResults([]);
           }}
           aria-label="Paste quiz JSON for bulk import"
@@ -548,11 +682,28 @@ export function QuizPublishingConsole() {
           }}
         />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkQuizzes()} style={buttonStyle}>
-            Validate / preview
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkQuizzes(bulkPreviewMode ?? "draft")} style={buttonStyle}>
+            Preview {bulkPreviewMode === "schedule" ? "schedule" : "draft"} import
           </button>
-          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes()} style={primaryButtonStyle}>
-            {busy === "bulk-import" ? "Importing…" : "Import drafts"}
+          <label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+            Preview mode
+            <select
+              value={bulkPreviewMode ?? "draft"}
+              onChange={(event) => {
+                setBulkPreviewMode(event.target.value as "draft" | "schedule");
+                setBulkPreview([]);
+              }}
+              aria-label="Bulk quiz preview mode"
+            >
+              <option value="draft">Save all as Draft</option>
+              <option value="schedule">Schedule valid records</option>
+            </select>
+          </label>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes("draft")} style={buttonStyle}>
+            {busy === "bulk-import" ? "Saving…" : "Save all as Draft"}
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes("schedule")} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Scheduling…" : "Schedule valid records"}
           </button>
         </div>
         {bulkPreview.length > 0 && (
@@ -560,6 +711,9 @@ export function QuizPublishingConsole() {
             {bulkPreview.map((item) => (
               <li key={item.index} style={{ color: item.valid ? "#15803d" : "#b91c1c" }}>
                 {item.title ?? `Item ${item.index + 1}`} {item.id ? `· ${item.id} · ${item.publicationDate}` : ""}
+                {item.timezone ? ` · ${item.timezone}` : ""}
+                {item.status ? ` · ${item.status}` : ""}
+                {item.scheduledAt ? ` · ${formatTimestamp(item.scheduledAt, item.timezone ?? "Asia/Kolkata")}` : ""}
                 {item.valid ? " — valid" : ` — ${item.errors.join(" ")}`}
               </li>
             ))}
@@ -574,7 +728,7 @@ export function QuizPublishingConsole() {
       </div>
 
       <div className="admin-content-panel" style={panelStyle}>
-        <h2 style={{ marginTop: 0 }}>{editingId ? "Edit draft" : "Import or create a draft"}</h2>
+        <h2 style={{ marginTop: 0 }}>{editingId ? "Edit draft" : "Import or create a quiz"}</h2>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
           <label style={buttonStyle}>
             Import quiz JSON
@@ -628,20 +782,30 @@ export function QuizPublishingConsole() {
         {report?.valid && report.parsedQuiz && (
           <div style={{ marginTop: 20 }}>
             <h3>Quiz preview</h3>
+            <p style={{ color: "#475569" }}>
+              Save as Draft: <strong>draft</strong> (will not auto-publish). Schedule Publication:{" "}
+              {schedulePreview && "error" in schedulePreview
+                ? schedulePreview.error
+                : schedulePreview?.status === "scheduled"
+                  ? `${formatTimestamp(schedulePreview.scheduledAt, report.parsedQuiz.timezone)} · UTC ${schedulePreview.scheduledAt}`
+                  : "not resolved"}
+            </p>
             <QuizPlayer quiz={report.parsedQuiz} />
           </div>
         )}
         {error && <p role="alert" style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</p>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
           <button type="button" disabled={!editor || busy !== ""} onClick={() => validateEditor(editor)} style={buttonStyle}>Validate / preview</button>
-          <button type="button" disabled={!editor || busy !== ""} onClick={() => void saveDraft()} style={primaryButtonStyle}>
-            {busy === "save" ? "Saving…" : "Save as draft"}
+          <button type="button" disabled={!editor || busy !== ""} onClick={() => void saveDraft()} style={buttonStyle}>
+            {busy === "save" ? "Saving…" : "Save as Draft"}
+          </button>
+          <button type="button" disabled={!editor || busy !== ""} onClick={() => void scheduleEditor()} style={primaryButtonStyle}>
+            {busy === "schedule-editor" ? "Scheduling…" : "Schedule Publication"}
           </button>
           {editingId && <button type="button" onClick={startNew} style={buttonStyle}>Cancel edit</button>}
         </div>
         <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-          Imported quizzes are always saved as drafts. Publication validates the content again on the server.
-          Choose a time on the quiz’s publication date in its displayed timezone. Scheduling is stored in UTC.
+          Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date in its timezone. Publication validates the content again on the server; timestamps are stored in UTC.
         </p>
       </div>
     </section>

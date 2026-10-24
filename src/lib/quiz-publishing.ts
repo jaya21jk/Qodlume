@@ -18,6 +18,33 @@ export function validateQuizForPublishing(quiz: Quiz): ValidationReport {
   return report;
 }
 
+export interface SeenQuizImportKeys {
+  ids: Set<string>;
+  publicationDates: Set<string>;
+  questionIds: Set<string>;
+}
+
+export function findQuizImportBatchConflicts(
+  quiz: Quiz,
+  seen: SeenQuizImportKeys,
+): string[] {
+  const errors: string[] = [];
+  if (seen.ids.has(quiz.id)) errors.push(`Duplicate quiz ID "${quiz.id}" in this import.`);
+  if (seen.publicationDates.has(quiz.publicationDate)) {
+    errors.push(`Duplicate publication date "${quiz.publicationDate}" in this import.`);
+  }
+  const duplicateQuestion = quiz.questions.find((question) =>
+    seen.questionIds.has(question.id),
+  );
+  if (duplicateQuestion) {
+    errors.push(`Question ID "${duplicateQuestion.id}" is duplicated within this import.`);
+  }
+  seen.ids.add(quiz.id);
+  seen.publicationDates.add(quiz.publicationDate);
+  quiz.questions.forEach((question) => seen.questionIds.add(question.id));
+  return errors;
+}
+
 export function dateTimeLocalToUtc(
   value: string,
   timezone: string,
@@ -98,16 +125,42 @@ export function dateTimeLocalToUtc(
   }
 }
 
+export function dateTimeUtcToLocal(value: string, timezone: string): string | undefined {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return undefined;
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date(timestamp))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    );
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeScheduledPublicationTime(
   publicationDate: string,
   timezone: string,
-  value: string,
+  value?: string,
   now = Date.now(),
 ): { scheduledAt: string } | { error: string } {
-  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) {
-    return { error: "scheduledAt must include a UTC offset." };
-  }
-  const scheduledTime = Date.parse(value);
+  const dateTime = value
+    ? validateScheduledPublicationDate(publicationDate, timezone, value)
+    : dateTimeLocalToUtc(`${publicationDate}T00:00`, timezone);
+  if ("error" in dateTime) return dateTime;
+
+  const scheduledTime = Date.parse(dateTime.scheduledAt);
   if (!Number.isFinite(scheduledTime) || scheduledTime <= now) {
     return { error: "scheduledAt must be a valid future timestamp." };
   }
@@ -127,4 +180,74 @@ export function normalizeScheduledPublicationTime(
     return { error: `Quiz timezone "${timezone}" is invalid.` };
   }
   return { scheduledAt: new Date(scheduledTime).toISOString() };
+}
+
+export function validateScheduledPublicationDate(
+  publicationDate: string,
+  timezone: string,
+  value: string,
+): { scheduledAt: string } | { error: string } {
+  const timestamp = parseExplicitTimestamp(value);
+  if ("error" in timestamp) return timestamp;
+  try {
+    const scheduledDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(timestamp.scheduledAt));
+    if (scheduledDate !== publicationDate) {
+      return {
+        error: `Scheduled time must fall on ${publicationDate} in ${timezone}.`,
+      };
+    }
+  } catch {
+    return { error: `Quiz timezone "${timezone}" is invalid.` };
+  }
+  return timestamp;
+}
+
+export function resolveImportPublication(
+  mode: "draft" | "schedule",
+  publicationDate: string,
+  timezone: string,
+  scheduledAt?: string,
+  now = Date.now(),
+): { status: "draft" } | { status: "scheduled"; scheduledAt: string } | { error: string } {
+  if (mode === "draft") return { status: "draft" };
+  const result = normalizeScheduledPublicationTime(
+    publicationDate,
+    timezone,
+    scheduledAt,
+    now,
+  );
+  return "error" in result
+    ? result
+    : { status: "scheduled", scheduledAt: result.scheduledAt };
+}
+
+function parseExplicitTimestamp(value: string): { scheduledAt: string } | { error: string } {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.\d{1,3})?)?(Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/.exec(
+      value,
+    );
+  if (!match) return { error: "scheduledAt must be a valid ISO timestamp with a UTC offset." };
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day ||
+    /[+-]14:(?!00)/.test(value)
+  ) {
+    return { error: "scheduledAt must be a valid ISO timestamp with a UTC offset." };
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return { error: "scheduledAt must be a valid ISO timestamp with a UTC offset." };
+  }
+  return { scheduledAt: new Date(timestamp).toISOString() };
 }

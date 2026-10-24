@@ -12,6 +12,10 @@ import {
   type WordGuessConfiguration,
 } from "../types/daily-game-challenge";
 import { isValidCalendarDate } from "./quiz-validator";
+import {
+  normalizeScheduledPublicationTime,
+  validateScheduledPublicationDate,
+} from "./quiz-publishing";
 
 const CHALLENGE_STATUSES: DailyGameStatus[] = [
   "draft",
@@ -221,11 +225,14 @@ export function validateDailyGameChallenge(
     ) {
       errors.push("scheduledAt must be an ISO timestamp with a UTC offset.");
     } else {
-      scheduledAt = new Date(value.scheduledAt).toISOString();
+      const validSchedule = validateScheduledPublicationDate(
+        typeof value.publicationDate === "string" ? value.publicationDate : "",
+        timezone,
+        value.scheduledAt,
+      );
+      if ("error" in validSchedule) errors.push(validSchedule.error);
+      else scheduledAt = validSchedule.scheduledAt;
     }
-  }
-  if (value.status === "scheduled" && !scheduledAt) {
-    errors.push("scheduledAt is required when status is scheduled.");
   }
 
   let configuration: DailyGameConfiguration | undefined;
@@ -260,24 +267,15 @@ export function validateDailyGameChallenge(
 export function validateDailySchedule(
   publicationDate: string,
   timezone: string,
-  scheduledAt: string,
+  scheduledAt?: string,
   now: Date = new Date(),
 ): { scheduledAt: string } | { error: string } {
-  if (!/(Z|[+-]\d{2}:\d{2})$/.test(scheduledAt)) {
-    return { error: "scheduledAt must include a UTC offset." };
-  }
-  const timestamp = Date.parse(scheduledAt);
-  if (!Number.isFinite(timestamp) || timestamp <= now.getTime()) {
-    return { error: "scheduledAt must be a valid future timestamp." };
-  }
-  try {
-    if (getDateInTimezone(new Date(timestamp), timezone) !== publicationDate) {
-      return { error: `Scheduled time must fall on ${publicationDate} in ${timezone}.` };
-    }
-  } catch {
-    return { error: `Timezone "${timezone}" is invalid.` };
-  }
-  return { scheduledAt: new Date(timestamp).toISOString() };
+  return normalizeScheduledPublicationTime(
+    publicationDate,
+    timezone,
+    scheduledAt,
+    now.getTime(),
+  );
 }
 
 export function isDailyChallengeAvailable(

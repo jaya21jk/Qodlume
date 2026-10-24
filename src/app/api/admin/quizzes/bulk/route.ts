@@ -5,7 +5,10 @@ import {
 } from "../../../../../lib/admin-api";
 import {
   canEditQuiz,
+  findQuizImportBatchConflicts,
   normalizeScheduledPublicationTime,
+  resolveImportPublication,
+  validateScheduledPublicationDate,
   validateQuizForPublishing,
 } from "../../../../../lib/quiz-publishing";
 import {
@@ -35,6 +38,10 @@ export async function POST(request: Request): Promise<Response> {
     if (body.quizzes.length > 100) {
       return adminJson({ error: "Bulk imports are limited to 100 quizzes." }, 413);
     }
+    const mode = "mode" in body ? body.mode : "draft";
+    if (mode !== "draft" && mode !== "schedule") {
+      return adminJson({ error: "Import mode must be draft or schedule." }, 400);
+    }
 
     let db: Awaited<ReturnType<typeof getDatabase>>;
     try {
@@ -43,14 +50,19 @@ export async function POST(request: Request): Promise<Response> {
       console.error("Bulk quiz import database setup failed.", error);
       return adminJson({ error: "Unable to access the quiz database." }, 500);
     }
-    const batchIds = new Set<string>();
-    const batchDates = new Set<string>();
-    const batchQuestionIds = new Set<string>();
+    const seenImportKeys = {
+      ids: new Set<string>(),
+      publicationDates: new Set<string>(),
+      questionIds: new Set<string>(),
+    };
     const results: Array<{
       index: number;
       id?: string;
       publicationDate?: string;
       status: "created" | "failed" | "duplicate";
+      publicationStatus?: "draft" | "scheduled";
+      timezone?: string;
+      scheduledAt?: string;
       errors?: string[];
     }> = [];
 
@@ -78,15 +90,7 @@ export async function POST(request: Request): Promise<Response> {
       }
 
       const quiz = validation.parsedQuiz;
-      const duplicateFields: string[] = [];
-      if (batchIds.has(quiz.id)) duplicateFields.push(`Duplicate quiz ID "${quiz.id}" in this import.`);
-      if (batchDates.has(quiz.publicationDate)) {
-        duplicateFields.push(`Duplicate publication date "${quiz.publicationDate}" in this import.`);
-      }
-      const duplicateQuestion = quiz.questions.find((question) => batchQuestionIds.has(question.id));
-      if (duplicateQuestion) {
-        duplicateFields.push(`Question ID "${duplicateQuestion.id}" is duplicated within this import.`);
-      }
+      const duplicateFields = findQuizImportBatchConflicts(quiz, seenImportKeys);
       if (duplicateFields.length > 0) {
         results.push({
           index,
@@ -97,10 +101,41 @@ export async function POST(request: Request): Promise<Response> {
         });
         continue;
       }
-      batchIds.add(quiz.id);
-      batchDates.add(quiz.publicationDate);
-      quiz.questions.forEach((question) => batchQuestionIds.add(question.id));
-
+      if (quiz.scheduledAt) {
+        const scheduleDate = validateScheduledPublicationDate(
+          quiz.publicationDate,
+          quiz.timezone,
+          quiz.scheduledAt,
+        );
+        if ("error" in scheduleDate) {
+          results.push({
+            index,
+            id: quiz.id,
+            publicationDate: quiz.publicationDate,
+            status: "failed",
+            errors: [scheduleDate.error],
+          });
+          continue;
+        }
+        quiz.scheduledAt = scheduleDate.scheduledAt;
+      }
+      const publication = resolveImportPublication(
+        mode,
+        quiz.publicationDate,
+        quiz.timezone,
+        quiz.scheduledAt,
+      );
+      if ("error" in publication) {
+        results.push({
+          index,
+          id: quiz.id,
+          publicationDate: quiz.publicationDate,
+          status: "failed",
+          errors: [publication.error],
+        });
+        continue;
+      }
+      let draftCreated = false;
       try {
         const existing = await db
           .prepare(
@@ -141,11 +176,24 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         await createDraftQuiz(db, { ...quiz, status: "draft" }, "admin");
+        draftCreated = true;
+        if (publication.status === "scheduled") {
+          await setQuizStatus(db, quiz.id, "scheduled", {
+            scheduledAt: publication.scheduledAt,
+            validationIssues: validation.errors,
+            expectedStatus: "draft",
+          });
+        }
         results.push({
           index,
           id: quiz.id,
           publicationDate: quiz.publicationDate,
           status: "created",
+          publicationStatus: publication.status,
+          timezone: quiz.timezone,
+          scheduledAt: publication.status === "scheduled"
+            ? publication.scheduledAt
+            : quiz.scheduledAt,
         });
       } catch (error) {
         console.error("Bulk quiz import item failed.", { index, error });
@@ -154,10 +202,13 @@ export async function POST(request: Request): Promise<Response> {
           id: quiz.id,
           publicationDate: quiz.publicationDate,
           status: "failed",
+          publicationStatus: draftCreated ? "draft" : undefined,
           errors: [
             error instanceof Error && /constraint/i.test(error.message)
               ? "A quiz or question with these IDs already exists."
-              : "Unable to persist this quiz.",
+              : draftCreated
+                ? `Saved as a draft, but scheduling failed: ${error instanceof Error ? error.message : "Unable to schedule publication."}`
+                : "Unable to persist this quiz.",
           ],
         });
       }
@@ -187,10 +238,9 @@ export async function POST(request: Request): Promise<Response> {
         item === null ||
         !("id" in item) ||
         typeof item.id !== "string" ||
-        !("scheduledAt" in item) ||
-        typeof item.scheduledAt !== "string"
+        ("scheduledAt" in item && item.scheduledAt !== undefined && typeof item.scheduledAt !== "string")
       ) {
-        results.push({ id: "", status: "failed", error: "Each item requires id and scheduledAt." });
+        results.push({ id: "", status: "failed", error: "Each item requires an id and optional scheduledAt." });
         continue;
       }
       try {
@@ -206,12 +256,13 @@ export async function POST(request: Request): Promise<Response> {
         const schedule = normalizeScheduledPublicationTime(
           quiz.publicationDate,
           quiz.timezone,
-          item.scheduledAt,
+          typeof item.scheduledAt === "string" ? item.scheduledAt : quiz.scheduledAt,
         );
         if ("error" in schedule) throw new Error(schedule.error);
         await setQuizStatus(db, item.id, "scheduled", {
           scheduledAt: schedule.scheduledAt,
           validationIssues: validation.errors,
+          expectedStatus: quiz.status,
         });
         results.push({ id: item.id, status: "scheduled" });
       } catch (error) {

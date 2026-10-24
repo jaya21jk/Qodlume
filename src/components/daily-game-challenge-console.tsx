@@ -7,7 +7,11 @@ import {
   type DailyGameChallenge,
   type DailyGameType,
 } from "../types/daily-game-challenge";
-import { dateTimeLocalToUtc } from "../lib/quiz-publishing";
+import {
+  dateTimeLocalToUtc,
+  dateTimeUtcToLocal,
+  resolveImportPublication,
+} from "../lib/quiz-publishing";
 import { validateDailyGameChallenge } from "../lib/daily-game-challenges";
 
 const GAME_TITLES: Record<DailyGameType, string> = {
@@ -63,6 +67,18 @@ function dateTimeLocalToUtcSafe(value: string, timezone: string): string | undef
   return "error" in converted ? undefined : converted.scheduledAt;
 }
 
+function formatChallengeTimestamp(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
 export function DailyGameChallengeConsole() {
   const [challenges, setChallenges] = useState<DailyGameChallenge[]>([]);
   const [editor, setEditor] = useState("");
@@ -71,12 +87,16 @@ export function DailyGameChallengeConsole() {
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
   const [bulkJson, setBulkJson] = useState("");
+  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | null>(null);
   const [bulkPreview, setBulkPreview] = useState<Array<{
     index: number;
     valid: boolean;
     title?: string;
     gameType?: string;
     publicationDate?: string;
+    status?: "draft" | "scheduled";
+    timezone?: string;
+    scheduledAt?: string;
     errors: string[];
   }>>([]);
   const [bulkResult, setBulkResult] = useState<string[]>([]);
@@ -216,7 +236,6 @@ export function DailyGameChallengeConsole() {
               ...challenge,
               id: editingId ?? "",
               status: "draft",
-              scheduledAt: undefined,
             },
           }),
         },
@@ -236,14 +255,82 @@ export function DailyGameChallengeConsole() {
     }
   };
 
+  const scheduleEditor = async () => {
+    const challenge = validateEditor();
+    if (!challenge) {
+      setError("Fix the challenge content before scheduling.");
+      return;
+    }
+    const publication = resolveImportPublication(
+      "schedule",
+      challenge.publicationDate,
+      challenge.timezone,
+      challenge.scheduledAt,
+    );
+    if ("error" in publication) {
+      setError(publication.error);
+      return;
+    }
+    if (publication.status !== "scheduled") return;
+
+    const endpoint = editingId
+      ? `/api/admin/daily-game-challenges/${encodeURIComponent(editingId)}`
+      : "/api/admin/daily-game-challenges";
+    setBusy("schedule-editor");
+    setError("");
+    try {
+      const saveResponse = await fetch(endpoint, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge: {
+            ...challenge,
+            id: editingId ?? "",
+            status: "draft",
+            scheduledAt: undefined,
+          },
+        }),
+      });
+      const saved = (await saveResponse.json()) as ApiResult;
+      if (!saveResponse.ok || !saved.challenge) {
+        if (saved.validation) setValidation(saved.validation);
+        throw new Error(saved.error ?? "Unable to save challenge before scheduling.");
+      }
+
+      const scheduleResponse = await fetch(
+        `/api/admin/daily-game-challenges/${encodeURIComponent(saved.challenge.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "schedule",
+            scheduledAt: publication.scheduledAt,
+          }),
+        },
+      );
+      const result = (await scheduleResponse.json()) as ApiResult;
+      if (!scheduleResponse.ok || !result.challenge) {
+        throw new Error(`Challenge saved as a draft, but scheduling failed: ${result.error ?? "Unable to schedule publication."}`);
+      }
+      setEditingId(null);
+      setEditor(JSON.stringify(result.challenge, null, 2));
+      await loadChallenges();
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Unable to schedule challenge.");
+      await loadChallenges();
+    } finally {
+      setBusy("");
+    }
+  };
+
   const runAction = async (challenge: DailyGameChallenge, action: "publish" | "schedule" | "unpublish") => {
     let scheduledAt: string | undefined;
     if (action === "schedule") {
-      const localValue = scheduleInputs[challenge.id];
-      if (!localValue) {
-        setError(`Choose a schedule time for "${challenge.title}".`);
-        return;
-      }
+      const localValue = scheduleInputs[challenge.id] ??
+        (challenge.scheduledAt
+          ? dateTimeUtcToLocal(challenge.scheduledAt, challenge.timezone)
+          : undefined) ??
+        `${challenge.publicationDate}T00:00`;
       if (!localValue.startsWith(`${challenge.publicationDate}T`)) {
         setError(`Schedule time must be on ${challenge.publicationDate} in ${challenge.timezone}.`);
         return;
@@ -287,7 +374,7 @@ export function DailyGameChallengeConsole() {
     }
   };
 
-  const parseBulkChallenges = (): unknown[] | null => {
+  const parseBulkChallenges = (mode: "draft" | "schedule" = "draft"): unknown[] | null => {
     try {
       const parsed: unknown = JSON.parse(bulkJson);
       const items = Array.isArray(parsed) ? parsed : [parsed];
@@ -302,18 +389,40 @@ export function DailyGameChallengeConsole() {
         }
         const challenge = report.challenge;
         const key = `${challenge.gameType}:${challenge.publicationDate}`;
-        const duplicate = seen.has(key);
+        const duplicate =
+          seen.has(key) ||
+          challenges.some(
+            (existing) =>
+              existing.gameType === challenge.gameType &&
+              existing.publicationDate === challenge.publicationDate,
+          );
         seen.add(key);
+        const publication = resolveImportPublication(
+          mode,
+          challenge.publicationDate,
+          challenge.timezone,
+          challenge.scheduledAt,
+        );
+        const errors = [
+          ...(duplicate ? ["A challenge for this game and date already exists or is repeated in this batch."] : []),
+          ...("error" in publication ? [publication.error] : []),
+        ];
         return {
           index,
-          valid: !duplicate,
+          valid: errors.length === 0,
           title: challenge.title,
           gameType: challenge.gameType,
           publicationDate: challenge.publicationDate,
-          errors: duplicate ? ["Duplicate game type and date in this import."] : [],
+          status: "error" in publication ? undefined : publication.status,
+          timezone: challenge.timezone,
+          scheduledAt: !("error" in publication) && publication.status === "scheduled"
+            ? publication.scheduledAt
+            : challenge.scheduledAt,
+          errors,
         };
       });
       setBulkPreview(preview);
+      setBulkPreviewMode(mode);
       setBulkResult([]);
       setError("");
       return items;
@@ -324,26 +433,44 @@ export function DailyGameChallengeConsole() {
     }
   };
 
-  const importBulkChallenges = async () => {
-    const items = parseBulkChallenges();
-    if (!items) return;
+  const importBulkChallenges = async (mode: "draft" | "schedule") => {
+    if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
+      setError(`Validate a preview for "${mode === "draft" ? "Save all as Draft" : "Schedule valid records"}" before confirming.`);
+      return;
+    }
+    const validCount = bulkPreview.filter((item) => item.valid).length;
+    if (validCount === 0) {
+      setError("There are no valid challenges to import.");
+      return;
+    }
+    if (!window.confirm(
+      `${mode === "draft" ? "Save" : "Schedule"} ${validCount} valid game challenge${validCount === 1 ? "" : "s"}? Invalid records will be skipped and reported.`,
+    )) return;
+    let items: unknown[];
+    try {
+      const parsed: unknown = JSON.parse(bulkJson);
+      items = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      setError("The import JSON changed. Validate it again before confirming.");
+      return;
+    }
     setBusy("bulk-import");
     setError("");
     try {
       const response = await fetch("/api/admin/daily-game-challenges/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", challenges: items }),
+        body: JSON.stringify({ action: "import", mode, challenges: items }),
       });
       const result = (await response.json()) as {
         error?: string;
-        results?: Array<{ index: number; status: string; errors?: string[]; publicationDate?: string; gameType?: string }>;
+        results?: Array<{ index: number; status: string; publicationStatus?: string; timezone?: string; scheduledAt?: string; errors?: string[]; publicationDate?: string; gameType?: string }>;
       };
       if (!response.ok || !result.results) {
         throw new Error(result.error ?? "Bulk import failed.");
       }
       setBulkResult(result.results.map((item) =>
-        `Item ${item.index + 1}${item.gameType ? ` · ${item.gameType} · ${item.publicationDate}` : ""}: ${item.status}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
+        `Item ${item.index + 1}${item.gameType ? ` · ${item.gameType} · ${item.publicationDate}` : ""}: ${item.publicationStatus ?? item.status}${item.scheduledAt ? ` · ${formatChallengeTimestamp(item.scheduledAt, item.timezone ?? "Asia/Kolkata")}` : ""}${item.errors?.length ? ` — ${item.errors.join(" ")}` : ""}`,
       ));
       await loadChallenges();
     } catch (importError) {
@@ -356,8 +483,14 @@ export function DailyGameChallengeConsole() {
   const bulkSchedule = async () => {
     const items = selectedForSchedule.map((id) => {
       const challenge = challenges.find((item) => item.id === id);
-      const localValue = scheduleInputs[id];
-      if (!challenge || !localValue || !localValue.startsWith(`${challenge.publicationDate}T`)) {
+      const localValue = challenge
+        ? scheduleInputs[id] ??
+          (challenge.scheduledAt
+            ? dateTimeUtcToLocal(challenge.scheduledAt, challenge.timezone)
+            : undefined) ??
+          `${challenge.publicationDate}T00:00`
+        : "";
+      if (!challenge || !localValue.startsWith(`${challenge.publicationDate}T`)) {
         return { id, scheduledAt: "", invalid: true };
       }
       const scheduledAt = dateTimeLocalToUtcSafe(localValue, challenge.timezone);
@@ -406,6 +539,14 @@ export function DailyGameChallengeConsole() {
   };
 
   const editorChallenge = editor ? validatePreviewJson(editor) : null;
+  const editorSchedulePreview = editorChallenge
+    ? resolveImportPublication(
+        "schedule",
+        editorChallenge.publicationDate,
+        editorChallenge.timezone,
+        editorChallenge.scheduledAt,
+      )
+    : null;
 
   return (
     <section style={{ display: "grid", gap: 20 }}>
@@ -457,7 +598,7 @@ export function DailyGameChallengeConsole() {
                   <h3 style={{ margin: "0 0 6px" }}>{challenge.title}</h3>
                   <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
                     {challenge.publicationDate} · {challenge.timezone} · {GAME_TITLES[challenge.gameType]}
-                    {challenge.scheduledAt ? ` · Scheduled ${new Date(challenge.scheduledAt).toLocaleString()}` : ""}
+                            {challenge.scheduledAt ? ` · ${challenge.status === "draft" || challenge.status === "unpublished" ? "Configured" : "Scheduled"} ${formatChallengeTimestamp(challenge.scheduledAt, challenge.timezone)}` : ""}
                   </p>
                 </div>
                 <strong style={{ color: STATUS_COLORS[challenge.status], textTransform: "capitalize" }}>
@@ -475,7 +616,7 @@ export function DailyGameChallengeConsole() {
                       Publish now
                     </button>
                     <button type="button" disabled={busy !== ""} onClick={() => void runAction(challenge, "schedule")} style={buttonStyle}>
-                      Schedule
+                      Schedule Publication
                     </button>
                   </>
                 )}
@@ -491,7 +632,11 @@ export function DailyGameChallengeConsole() {
                   Schedule ({challenge.timezone})
                   <input
                     type="datetime-local"
-                    value={scheduleInputs[challenge.id] ?? ""}
+                    value={scheduleInputs[challenge.id] ??
+                      (challenge.scheduledAt
+                        ? dateTimeUtcToLocal(challenge.scheduledAt, challenge.timezone)
+                        : undefined) ??
+                      `${challenge.publicationDate}T00:00`}
                     onChange={(event) => setScheduleInputs((current) => ({ ...current, [challenge.id]: event.target.value }))}
                     aria-label={`Schedule ${challenge.title}`}
                   />
@@ -505,7 +650,7 @@ export function DailyGameChallengeConsole() {
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Import games</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
-          Paste one challenge object or a JSON array. Imports are previewed and saved as drafts only; duplicates are reported rather than replaced.
+          Preview each record before choosing Save all as Draft or Schedule valid records. Scheduled records without an explicit time use midnight in their timezone; drafts never publish automatically. Duplicates are reported rather than replaced.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
           <label style={buttonStyle}>
@@ -518,6 +663,7 @@ export function DailyGameChallengeConsole() {
                 if (file) {
                   setBulkJson(await file.text());
                   setBulkPreview([]);
+                  setBulkPreviewMode(null);
                   setBulkResult([]);
                   setError("");
                 }
@@ -537,6 +683,7 @@ export function DailyGameChallengeConsole() {
           onChange={(event) => {
             setBulkJson(event.target.value);
             setBulkPreview([]);
+            setBulkPreviewMode(null);
             setBulkResult([]);
           }}
           aria-label="Paste daily game challenge JSON"
@@ -554,11 +701,28 @@ export function DailyGameChallengeConsole() {
           }}
         />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkChallenges()} style={buttonStyle}>
-            Validate / preview import
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkChallenges(bulkPreviewMode ?? "draft")} style={buttonStyle}>
+            Preview {bulkPreviewMode === "schedule" ? "schedule" : "draft"} import
           </button>
-          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges()} style={primaryButtonStyle}>
-            {busy === "bulk-import" ? "Importing…" : "Import valid drafts"}
+          <label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+            Preview mode
+            <select
+              value={bulkPreviewMode ?? "draft"}
+              onChange={(event) => {
+                setBulkPreviewMode(event.target.value as "draft" | "schedule");
+                setBulkPreview([]);
+              }}
+              aria-label="Bulk game preview mode"
+            >
+              <option value="draft">Save all as Draft</option>
+              <option value="schedule">Schedule valid records</option>
+            </select>
+          </label>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges("draft")} style={buttonStyle}>
+            {busy === "bulk-import" ? "Saving…" : "Save all as Draft"}
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges("schedule")} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Scheduling…" : "Schedule valid records"}
           </button>
         </div>
         {bulkPreview.length > 0 && (
@@ -566,6 +730,9 @@ export function DailyGameChallengeConsole() {
             {bulkPreview.map((item) => (
               <li key={item.index} style={{ color: item.valid ? "#15803d" : "#b91c1c" }}>
                 {item.title ?? `Item ${item.index + 1}`} {item.gameType ? `· ${item.gameType} · ${item.publicationDate}` : ""}
+                {item.timezone ? ` · ${item.timezone}` : ""}
+                {item.status ? ` · ${item.status}` : ""}
+                {item.scheduledAt ? ` · ${formatChallengeTimestamp(item.scheduledAt, item.timezone ?? "Asia/Kolkata")}` : ""}
                 {!item.valid ? ` — ${item.errors.join(" ")}` : " — valid"}
               </li>
             ))}
@@ -580,7 +747,7 @@ export function DailyGameChallengeConsole() {
       </div>
 
       <div className="admin-content-panel" style={panelStyle}>
-        <h2 style={{ marginTop: 0 }}>{editingId ? "Edit challenge draft" : "Create or edit a challenge"}</h2>
+        <h2 style={{ marginTop: 0 }}>{editingId ? "Edit challenge draft" : "Create or import a challenge"}</h2>
         {!editingId && (
           <label style={{ display: "grid", gap: 6, maxWidth: 360, marginBottom: 14 }}>
             Game type
@@ -773,6 +940,14 @@ export function DailyGameChallengeConsole() {
             <strong>Preview · {GAME_TITLES[editorChallenge.gameType]}</strong>
             <h3 style={{ margin: "8px 0 4px" }}>{editorChallenge.title}</h3>
             <p style={{ margin: "0 0 8px", color: "#475569" }}>{editorChallenge.description}</p>
+            <p style={{ color: "#475569" }}>
+              Save as Draft: <strong>draft</strong> (will not auto-publish). Schedule Publication:{" "}
+              {editorSchedulePreview && "error" in editorSchedulePreview
+                ? editorSchedulePreview.error
+                : editorSchedulePreview?.status === "scheduled"
+                  ? `${formatChallengeTimestamp(editorSchedulePreview.scheduledAt, editorChallenge.timezone)} · UTC ${editorSchedulePreview.scheduledAt}`
+                  : "not resolved"}
+            </p>
             <code>{JSON.stringify(editorChallenge.configuration)}</code>
           </aside>
         )}
@@ -781,15 +956,18 @@ export function DailyGameChallengeConsole() {
           <button type="button" disabled={!editor || busy !== ""} onClick={() => validateEditor()} style={buttonStyle}>
             Validate / preview
           </button>
-          <button type="button" disabled={!editor || busy !== ""} onClick={() => void saveDraft()} style={primaryButtonStyle}>
-            {busy === "save" ? "Saving…" : "Save as draft"}
+          <button type="button" disabled={!editor || busy !== ""} onClick={() => void saveDraft()} style={buttonStyle}>
+            {busy === "save" ? "Saving…" : "Save as Draft"}
+          </button>
+          <button type="button" disabled={!editor || busy !== ""} onClick={() => void scheduleEditor()} style={primaryButtonStyle}>
+            {busy === "schedule-editor" ? "Scheduling…" : "Schedule Publication"}
           </button>
           {editingId && (
             <button type="button" onClick={() => startNew()} style={buttonStyle}>Cancel edit</button>
           )}
         </div>
         <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-          All times use the challenge timezone. New and edited content is saved as a draft; publication validates again on the server.
+          All times use the challenge timezone. Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date; publication validates again on the server.
         </p>
       </div>
     </section>
