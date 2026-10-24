@@ -9,6 +9,15 @@ import type {
   ValidationIssue,
 } from "../types/quiz";
 import { isQuizPublic } from "./quiz-publishing";
+import {
+  isDailyChallengeAvailable,
+  validateDailyGameChallenge,
+} from "./daily-game-challenges";
+import type {
+  DailyGameChallenge,
+  DailyGameStatus,
+  DailyGameType,
+} from "../types/daily-game-challenge";
 
 interface QuizRow {
   id: string;
@@ -53,6 +62,22 @@ interface OptionRow {
 interface QuizSummaryRow extends QuizRow {
   question_count: number;
   question_ids_json: string;
+}
+
+interface DailyGameChallengeRow {
+  id: string;
+  publication_date: string;
+  scheduled_at: string | null;
+  timezone: string;
+  status: DailyGameStatus;
+  game_type: DailyGameType;
+  title: string;
+  description: string;
+  configuration_json: string;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  created_by: string | null;
 }
 
 const QUIZ_COLUMNS = `
@@ -405,6 +430,205 @@ export async function publishDueQuizzes(
   return result.meta.changes;
 }
 
+function mapDailyGameChallenge(row: DailyGameChallengeRow): DailyGameChallenge {
+  const parsed = validateDailyGameChallenge({
+    id: row.id,
+    publicationDate: row.publication_date,
+    scheduledAt: row.scheduled_at ?? undefined,
+    timezone: row.timezone,
+    status: row.status,
+    gameType: row.game_type,
+    title: row.title,
+    description: row.description,
+    configuration: parseJson(row.configuration_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    publishedAt: row.published_at ?? undefined,
+  });
+  if (!parsed.valid || !parsed.challenge) {
+    throw new Error(`Daily game challenge "${row.id}" contains invalid content: ${parsed.errors.join(" ")}`);
+  }
+  return parsed.challenge;
+}
+
+export async function listAdminDailyGameChallenges(
+  db: D1Database,
+): Promise<DailyGameChallenge[]> {
+  const result = await db
+    .prepare(
+      `SELECT id, publication_date, scheduled_at, timezone, status, game_type,
+              title, description, configuration_json, created_at, updated_at, published_at, created_by
+       FROM daily_game_challenges
+       ORDER BY publication_date DESC, game_type LIMIT 500`,
+    )
+    .all<DailyGameChallengeRow>();
+  assertSuccess(result);
+  return result.results.map(mapDailyGameChallenge);
+}
+
+export async function getAdminDailyGameChallenge(
+  db: D1Database,
+  id: string,
+): Promise<DailyGameChallenge | null> {
+  const result = await db
+    .prepare(
+      `SELECT id, publication_date, scheduled_at, timezone, status, game_type,
+              title, description, configuration_json, created_at, updated_at, published_at, created_by
+       FROM daily_game_challenges WHERE id = ? LIMIT 1`,
+    )
+    .bind(id)
+    .first<DailyGameChallengeRow>();
+  return result ? mapDailyGameChallenge(result) : null;
+}
+
+export async function getCurrentDailyGameChallenge(
+  db: D1Database,
+  gameType: DailyGameType,
+  now = new Date(),
+): Promise<DailyGameChallenge | null> {
+  const result = await db
+    .prepare(
+      `SELECT id, publication_date, scheduled_at, timezone, status, game_type,
+              title, description, configuration_json, created_at, updated_at, published_at, created_by
+       FROM daily_game_challenges
+       WHERE game_type = ? AND status IN ('published', 'scheduled')
+       ORDER BY publication_date DESC LIMIT 100`,
+    )
+    .bind(gameType)
+    .all<DailyGameChallengeRow>();
+  assertSuccess(result);
+
+  for (const row of result.results) {
+    const challenge = mapDailyGameChallenge(row);
+    if (isDailyChallengeAvailable(challenge, now)) {
+      return challenge;
+    }
+  }
+  return null;
+}
+
+export async function createDailyGameChallengeDraft(
+  db: D1Database,
+  challenge: DailyGameChallenge,
+  creator: string,
+): Promise<DailyGameChallenge> {
+  const now = new Date().toISOString();
+  const id = `${challenge.gameType}-${challenge.publicationDate}`;
+  const result = await db
+    .prepare(
+      `INSERT INTO daily_game_challenges (
+        id, publication_date, scheduled_at, timezone, status, game_type, title,
+        description, configuration_json, created_at, updated_at, published_at, created_by
+      ) VALUES (?, ?, NULL, ?, 'draft', ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    )
+    .bind(
+      id,
+      challenge.publicationDate,
+      challenge.timezone,
+      challenge.gameType,
+      challenge.title,
+      challenge.description,
+      JSON.stringify(challenge.configuration),
+      now,
+      now,
+      creator,
+    )
+    .run();
+  assertSuccess(result);
+  const saved = await getAdminDailyGameChallenge(db, id);
+  if (!saved) throw new Error("Created daily game challenge could not be read back.");
+  return saved;
+}
+
+export async function updateDailyGameChallengeDraft(
+  db: D1Database,
+  challenge: DailyGameChallenge,
+): Promise<DailyGameChallenge> {
+  const now = new Date().toISOString();
+  const result = await db
+    .prepare(
+      `UPDATE daily_game_challenges
+       SET timezone = ?, title = ?, description = ?, configuration_json = ?,
+           scheduled_at = NULL, status = 'draft', updated_at = ?
+       WHERE id = ? AND status IN ('draft', 'unpublished')`,
+    )
+    .bind(
+      challenge.timezone,
+      challenge.title,
+      challenge.description,
+      JSON.stringify(challenge.configuration),
+      now,
+      challenge.id,
+    )
+    .run();
+  assertSuccess(result);
+  if (result.meta.changes === 0) {
+    const existing = await getAdminDailyGameChallenge(db, challenge.id);
+    if (!existing) throw new Error("Daily game challenge not found.");
+    throw new Error("Only draft or unpublished daily game challenges can be edited.");
+  }
+  const saved = await getAdminDailyGameChallenge(db, challenge.id);
+  if (!saved) throw new Error("Updated daily game challenge could not be read back.");
+  return saved;
+}
+
+export async function setDailyGameChallengeStatus(
+  db: D1Database,
+  id: string,
+  status: DailyGameStatus,
+  scheduledAt?: string,
+): Promise<DailyGameChallenge> {
+  const now = new Date().toISOString();
+  const allowedSourceStatuses =
+    status === "published" || status === "scheduled"
+      ? "('draft', 'unpublished')"
+      : status === "unpublished"
+        ? "('published', 'scheduled')"
+        : "('draft', 'unpublished', 'scheduled', 'published')";
+  const result = await db
+    .prepare(
+      `UPDATE daily_game_challenges
+       SET status = ?, scheduled_at = ?,
+           published_at = CASE WHEN ? = 'published' THEN ? ELSE published_at END,
+           updated_at = ?
+       WHERE id = ? AND status IN ${allowedSourceStatuses}`,
+    )
+    .bind(
+      status,
+      status === "scheduled" ? scheduledAt ?? null : null,
+      status,
+      now,
+      now,
+      id,
+    )
+    .run();
+  assertSuccess(result);
+  if (result.meta.changes === 0) {
+    const existing = await getAdminDailyGameChallenge(db, id);
+    if (!existing) throw new Error("Daily game challenge not found.");
+    throw new Error(`Cannot change a ${existing.status} challenge to ${status}.`);
+  }
+  const updated = await getAdminDailyGameChallenge(db, id);
+  if (!updated) throw new Error("Updated daily game challenge could not be read back.");
+  return updated;
+}
+
+export async function publishDueDailyGameChallenges(
+  db: D1Database,
+  now = new Date().toISOString(),
+): Promise<number> {
+  const result = await db
+    .prepare(
+      `UPDATE daily_game_challenges
+       SET status = 'published', scheduled_at = NULL,
+           published_at = COALESCE(published_at, ?), updated_at = ?
+       WHERE status = 'scheduled' AND scheduled_at <= ?`,
+    )
+    .bind(now, now, now)
+    .run();
+  assertSuccess(result);
+  return result.meta.changes;
+}
 export async function getDatabase(): Promise<D1Database> {
   const { env } = await getCloudflareContext({ async: true });
   if (!env.DB) throw new Error("Cloudflare D1 binding 'DB' is not configured.");

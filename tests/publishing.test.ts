@@ -9,6 +9,7 @@ import {
 } from "../src/lib/admin-auth";
 import {
   canEditQuiz,
+  dateTimeLocalToUtc,
   isQuizPublic,
   normalizeScheduledPublicationTime,
   validateQuizForPublishing,
@@ -92,6 +93,15 @@ test("scheduled publication requires a future time on the quiz date in its timez
       now,
     ),
   );
+});
+
+test("schedule input is converted from the quiz timezone to UTC", () => {
+  assert.deepEqual(
+    dateTimeLocalToUtc("2026-10-23T00:03", "Asia/Kolkata"),
+    { scheduledAt: "2026-10-22T18:33:00.000Z" },
+  );
+  assert.ok("error" in dateTimeLocalToUtc("not-a-date", "Asia/Kolkata"));
+  assert.ok("error" in dateTimeLocalToUtc("2026-10-23T00:03", "Not/A_Zone"));
 });
 
 test("edit permissions and public visibility are status-based", () => {

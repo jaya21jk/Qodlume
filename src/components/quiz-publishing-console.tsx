@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import javaSampleQuiz from "../../java-quiz-sample.json";
 import { QuizPlayer } from "./quiz-player";
 import { validateQuizJsonString } from "../lib/quiz-validator";
+import { dateTimeLocalToUtc } from "../lib/quiz-publishing";
 import type {
   AdminQuizListItem,
   Quiz,
@@ -66,7 +67,7 @@ export function QuizPublishingConsole() {
   const [quizzes, setQuizzes] = useState<AdminQuizListItem[]>([]);
   const [editor, setEditor] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [scheduleInput, setScheduleInput] = useState("");
+  const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -166,11 +167,27 @@ export function QuizPublishingConsole() {
     }
     let scheduledAt: string | undefined;
     if (action === "schedule") {
+      const scheduleInput = scheduleInputs[quiz.id];
       if (!scheduleInput) {
-        setError("Choose a future publication time first.");
+        setError(`Choose a schedule time for "${quiz.title}" first.`);
         return;
       }
-      scheduledAt = new Date(scheduleInput).toISOString();
+      if (!scheduleInput.startsWith(`${quiz.publicationDate}T`)) {
+        setError(
+          `Choose a time on ${quiz.publicationDate} in ${quiz.timezone}; scheduled quizzes must publish on their quiz date.`,
+        );
+        return;
+      }
+      const converted = dateTimeLocalToUtc(scheduleInput, quiz.timezone);
+      if ("error" in converted) {
+        setError(converted.error);
+        return;
+      }
+      if (Date.parse(converted.scheduledAt) <= Date.now()) {
+        setError("Choose a future publication time.");
+        return;
+      }
+      scheduledAt = converted.scheduledAt;
     }
     setBusy(`${action}:${quiz.id}`);
     setError("");
@@ -187,6 +204,13 @@ export function QuizPublishingConsole() {
           await loadQuizzes();
         }
         throw new Error(result.error ?? "Unable to update quiz status.");
+      }
+      if (action === "schedule") {
+        setScheduleInputs((current) => {
+          const next = { ...current };
+          delete next[quiz.id];
+          return next;
+        });
       }
       await loadQuizzes();
     } catch (actionError) {
@@ -242,6 +266,7 @@ export function QuizPublishingConsole() {
           <button type="button" onClick={startNew} style={primaryButtonStyle}>Create draft</button>
         </header>
         {loading ? <p>Loading quizzes…</p> : null}
+        {error && <p role="alert" style={{ color: "#b91c1c", fontWeight: 700 }}>{error}</p>}
         {!loading && quizzes.length === 0 ? <p>No quizzes yet. Create a draft or import a JSON file.</p> : null}
         <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
           {quizzes.map((quiz) => (
@@ -284,11 +309,17 @@ export function QuizPublishingConsole() {
               </div>
               {(quiz.status === "draft" || quiz.status === "validated") && (
                 <label style={{ display: "inline-flex", gap: 8, alignItems: "center", marginTop: 12, color: "#475569", fontSize: 14 }}>
-                  Schedule time (your local timezone)
+                  Schedule time ({quiz.timezone})
                   <input
                     type="datetime-local"
-                    value={scheduleInput}
-                    onChange={(event) => setScheduleInput(event.target.value)}
+                    value={scheduleInputs[quiz.id] ?? ""}
+                    onChange={(event) => {
+                      setScheduleInputs((current) => ({
+                        ...current,
+                        [quiz.id]: event.target.value,
+                      }));
+                      setError("");
+                    }}
                     aria-label={`Schedule ${quiz.title}`}
                   />
                 </label>
@@ -366,7 +397,7 @@ export function QuizPublishingConsole() {
         </div>
         <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
           Imported quizzes are always saved as drafts. Publication validates the content again on the server.
-          Scheduling is stored in UTC; the selected browser-local time is converted before saving.
+          Choose a time on the quiz’s publication date in its displayed timezone. Scheduling is stored in UTC.
         </p>
       </div>
     </section>

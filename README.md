@@ -27,6 +27,20 @@ The server validates all content again before publication. Admin changes use sam
 
 Public quiz payloads omit answer keys and explanations. Answers are graded on the server and feedback is returned only after a complete submission.
 
+## Daily game challenges
+
+Manage Reaction Time Challenge, Word Guess, and Memory Match content at `/admin/daily-games`. Daily game configurations are stored in the `daily_game_challenges` D1 table, separate from game rendering and logic. Create drafts as JSON, preview and validate them, then publish immediately or schedule them for a local time on the configured publication date. Only draft or unpublished items can be edited; a unique game/date constraint prevents accidental replacement of an existing record. Unpublishing makes the challenge unavailable without deleting it.
+
+The public game endpoints choose the challenge matching the current `publicationDate` in that record’s IANA timezone. Scheduled challenges become published on the existing one-minute Worker Cron Trigger. The Word Guess answer is stored once in the challenge configuration, so every player receives the same answer for that date. Browser-local progress is keyed by game and publication date; game personal records remain separate from challenge configuration.
+
+Apply the new schema before using the management UI:
+
+```bash
+npm run db:migrate:local
+```
+
+Apply it to remote D1 with `npm run db:migrate:remote` only after confirming the configured Cloudflare account and database, following the remote migration checks below.
+
 ## Cloudflare Workers and D1 setup
 
 This app needs the **Cloudflare Workers + OpenNext** runtime. It is no longer a static Cloudflare Pages export: dynamic D1-backed `/quiz/[date]`, archive, sitemap, and admin routes require server-side execution. Existing Cloudflare resources are not automatically removed or changed by these project files.
@@ -114,7 +128,7 @@ npm run preview
 
 ## Database model
 
-The migration in `migrations/` defines `quizzes`, `questions`, `question_options`, and `admin_login_attempts`, with foreign keys, checks, unique IDs/dates, and indexes. `topic` is Qodlume’s existing category field; this preserves the current topic values and avoids a redundant categories table. Optional question hints and code/reference/tag metadata are preserved.
+The migrations in `migrations/` define `quizzes`, `questions`, `question_options`, `admin_login_attempts`, and `daily_game_challenges`, with checks, unique game/date pairs, and lookup indexes. `topic` is Qodlume’s existing category field; this preserves the current topic values and avoids a redundant categories table. Optional question hints and code/reference/tag metadata are preserved.
 
 ## Tests
 
@@ -123,11 +137,11 @@ npm test
 npm run validate:quizzes
 ```
 
-The test suite covers legacy validation, publication validation, public status visibility rules, answer grading, schedule date/time handling, session signatures/expiry, and same-origin write protection.
+The test suite covers legacy validation, quiz and daily game publication visibility, timezone/date boundaries, daily game configuration validation and consistency, answer grading, schedule date/time handling, session signatures/expiry, and same-origin write protection.
 
 ## Operational notes and limitations
 
 - A single shared administrator password is supported. Configure it as a Worker secret and rotate it when needed. This is not a multi-user identity provider or per-user role system.
-- Cron scheduling has one-minute granularity. Cloudflare Cron Triggers are best-effort at their scheduled minute; due quizzes are published on the next successful trigger.
+- Cron scheduling has one-minute granularity. Cloudflare Cron Triggers are best-effort at their scheduled minute; due quizzes and daily game challenges are published on the next successful trigger.
 - `SITE_URL` is a non-secret Worker variable that must be set to the confirmed canonical HTTPS origin before relying on sitemap and robots output. No placeholder production URL is configured.
 - D1 database creation, remote migration/seed, secrets, Cloudflare project configuration, and deployment require the account owner’s Cloudflare access. This repository has not been connected to a production D1 database or deployed by these code changes.

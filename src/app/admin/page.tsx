@@ -9,6 +9,13 @@ const adminMenu = [
     accent: "#2563eb",
   },
   {
+    title: "Manage daily game challenges",
+    description:
+      "Configure and publish Reaction Time, Word Guess, and Memory Match content by date.",
+    href: "/admin/daily-games",
+    accent: "#7c3aed",
+  },
+  {
     title: "View public site",
     description:
       "Open the user-facing homepage and challenge experience for final checks.",
