@@ -79,7 +79,11 @@ function formatChallengeTimestamp(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
-export function DailyGameChallengeConsole() {
+export function DailyGameChallengeConsole({
+  view,
+}: {
+  view: "import" | "manage";
+}) {
   const [challenges, setChallenges] = useState<DailyGameChallenge[]>([]);
   const [editor, setEditor] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -106,6 +110,7 @@ export function DailyGameChallengeConsole() {
   const [loading, setLoading] = useState(true);
 
   const loadChallenges = useCallback(async () => {
+    if (view !== "manage") return;
     setLoading(true);
     try {
       const response = await fetch("/api/admin/daily-game-challenges", { cache: "no-store" });
@@ -117,7 +122,7 @@ export function DailyGameChallengeConsole() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     void loadChallenges();
@@ -555,6 +560,7 @@ export function DailyGameChallengeConsole() {
 
   return (
     <section style={{ display: "grid", gap: 20 }}>
+      {view === "manage" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
@@ -651,7 +657,9 @@ export function DailyGameChallengeConsole() {
           ))}
         </div>
       </div>
+      ) : null}
 
+      {view === "import" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Import games</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
@@ -749,7 +757,9 @@ export function DailyGameChallengeConsole() {
           </div>
         )}
       </div>
+      ) : null}
 
+      {view === "manage" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>{editingId ? "Edit challenge draft" : "Create or import a challenge"}</h2>
         {!editingId && (
@@ -974,6 +984,7 @@ export function DailyGameChallengeConsole() {
           All times use the challenge timezone. Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date; publication validates again on the server.
         </p>
       </div>
+      ) : null}
     </section>
   );
 }

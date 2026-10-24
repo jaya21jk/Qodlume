@@ -11,6 +11,9 @@ export default function AdminDailyGamesPage() {
         <Link href="/games" style={{ color: "#0f172a", textDecoration: "none", fontWeight: 700 }}>
           Public games
         </Link>
+        <Link href="/admin/game-management" style={{ color: "#0f172a", textDecoration: "none", fontWeight: 700 }}>
+          Manage challenges
+        </Link>
       </div>
       <header style={{
         background: "linear-gradient(135deg, #0f172a, #1e293b)",
@@ -24,13 +27,13 @@ export default function AdminDailyGamesPage() {
           Content operations
         </p>
         <h1 style={{ margin: "12px 0 8px", fontSize: "clamp(2rem, 4vw, 3rem)" }}>
-          Daily game challenges
+          Import daily game challenges
         </h1>
         <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.7 }}>
-          Create, preview, schedule, publish, and unpublish daily game content without a frontend deployment.
+          Import one or many daily game challenges, review their validation and schedule, and explicitly save drafts or schedule valid records.
         </p>
       </header>
-      <DailyGameChallengeConsole />
+      <DailyGameChallengeConsole view="import" />
     </main>
   );
 }

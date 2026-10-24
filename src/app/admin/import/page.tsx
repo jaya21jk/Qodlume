@@ -21,6 +21,12 @@ export default function AdminImportPage() {
         >
           Public site
         </Link>
+        <Link
+          href="/admin/quizzes"
+          style={{ color: "#0f172a", textDecoration: "none", fontWeight: 700 }}
+        >
+          Manage quizzes
+        </Link>
       </div>
 
       <header
@@ -48,16 +54,15 @@ export default function AdminImportPage() {
         <h1
           style={{ margin: "12px 0 8px", fontSize: "clamp(2rem, 4vw, 3rem)" }}
         >
-          Quiz publishing workspace
+          Quiz import
         </h1>
         <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.7 }}>
-          Create drafts, import and validate JSON, preview questions, publish
-          immediately, schedule future releases, and manage archived content.
-          All changes are saved to the Cloudflare D1 database.
+          Import one or many quizzes, preview validation and publication timing,
+          then explicitly save drafts or schedule valid records.
         </p>
       </header>
 
-      <QuizPublishingConsole />
+      <QuizPublishingConsole view="import" />
     </main>
   );
 }

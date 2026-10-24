@@ -857,6 +857,28 @@
   touch-action: manipulation;
 }
 
+.word-guess-invalid-row {
+  animation: word-guess-invalid-wobble 640ms ease-in-out 2;
+}
+
+.word-guess-invalid-row > div:not(input) {
+  border-color: #ea580c !important;
+  background: #f97316 !important;
+  color: #ffffff !important;
+}
+
+.word-guess-message-invalid {
+  border-color: #fb923c !important;
+  background: #fff7ed !important;
+  color: #c2410c !important;
+}
+
+@keyframes word-guess-invalid-wobble {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-7px); }
+  30%, 60%, 90% { transform: translateX(7px); }
+}
+
 .word-guess-board-input {
   position: absolute;
   inset: 0;
@@ -1130,6 +1152,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .word-guess-invalid-row {
+    animation: none;
+  }
+
   .word-win-celebration *,
   .word-win-celebration::before {
     animation: none !important;

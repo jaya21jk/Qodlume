@@ -2,18 +2,32 @@ import Link from "next/link";
 
 const adminMenu = [
   {
-    title: "Manage and publish quizzes",
+    title: "Import quizzes",
     description:
-      "Create drafts, validate imports, schedule releases, and manage live quizzes.",
+      "Import one or many quiz records and review validation and schedule previews.",
     href: "/admin/import",
     accent: "#2563eb",
   },
   {
-    title: "Manage daily game challenges",
+    title: "Manage quizzes",
     description:
-      "Configure and publish Reaction Time, Word Guess, and Memory Match content by date.",
+      "Review drafts, scheduled releases, and published quizzes; edit or publish them.",
+    href: "/admin/quizzes",
+    accent: "#0f766e",
+  },
+  {
+    title: "Import game challenges",
+    description:
+      "Import and validate Reaction Time, Word Guess, and Memory Match content.",
     href: "/admin/daily-games",
     accent: "#7c3aed",
+  },
+  {
+    title: "Manage game challenges",
+    description:
+      "Review drafts, scheduled releases, and published daily game challenges.",
+    href: "/admin/game-management",
+    accent: "#c2410c",
   },
   {
     title: "View public site",

@@ -26,6 +26,7 @@ export default function WordGuessPage() {
   const [gameOver, setGameOver] = useState(false);
   const [message, setMessage] = useState("Type a five-letter word and press Enter.");
   const [submitting, setSubmitting] = useState(false);
+  const [invalidGuess, setInvalidGuess] = useState(false);
   const [loadedProgressKey, setLoadedProgressKey] = useState("");
   const submittingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -146,9 +147,24 @@ export default function WordGuessPage() {
       const result = (await response.json()) as {
         feedback?: Array<"correct" | "present" | "absent">;
         won?: boolean;
+        code?: string;
         error?: string;
       };
       if (!response.ok || !result.feedback) {
+        if (result.code === "not-in-word-list") {
+          setInvalidGuess(true);
+          setMessage("Not in word list.");
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          setBoard((current) =>
+            current.map((row, rowIndex) =>
+              rowIndex === currentRow ? [...EMPTY_ROW] : row,
+            ),
+          );
+          setCurrentColumn(0);
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          setInvalidGuess(false);
+          return;
+        }
         setMessage(result.error ?? "Unable to check this guess. Try again.");
         return;
       }
@@ -230,7 +246,7 @@ export default function WordGuessPage() {
         ) : null}
 
         <div
-          className="word-guess-message"
+          className={`word-guess-message${invalidGuess ? " word-guess-message-invalid" : ""}`}
           aria-live="polite"
           style={{
             background: "rgba(255,255,255,0.8)",
@@ -260,7 +276,10 @@ export default function WordGuessPage() {
           {board.map((row, rowIndex) => (
             <div
               key={`row-${rowIndex}`}
-              className={rowIndex === currentRow && !gameOver ? "word-guess-active-row" : undefined}
+              className={[
+                rowIndex === currentRow && !gameOver ? "word-guess-active-row" : "",
+                rowIndex === currentRow && invalidGuess ? "word-guess-invalid-row" : "",
+              ].filter(Boolean).join(" ") || undefined}
               onClick={() => {
                 if (rowIndex === currentRow && !gameOver && !submitting) {
                   inputRef.current?.focus({ preventScroll: true });
@@ -326,7 +345,7 @@ export default function WordGuessPage() {
                   spellCheck={false}
                   inputMode="text"
                   enterKeyHint="go"
-                  disabled={submitting || !challenge}
+                  disabled={!challenge}
                   aria-label="Type your five-letter guess in the highlighted row"
                   aria-describedby="word-guess-input-help"
                 />

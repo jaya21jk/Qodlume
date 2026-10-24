@@ -309,7 +309,37 @@ export function AdminGate({ children }: { children: ReactNode }) {
                 fontWeight: 700,
               }}
             >
-              Import
+              Import quizzes
+            </Link>
+            <Link
+              href="/admin/quizzes"
+              style={{
+                color: "#475569",
+                textDecoration: "none",
+                fontWeight: 700,
+              }}
+            >
+              Manage quizzes
+            </Link>
+            <Link
+              href="/admin/daily-games"
+              style={{
+                color: "#475569",
+                textDecoration: "none",
+                fontWeight: 700,
+              }}
+            >
+              Import games
+            </Link>
+            <Link
+              href="/admin/game-management"
+              style={{
+                color: "#475569",
+                textDecoration: "none",
+                fontWeight: 700,
+              }}
+            >
+              Manage games
             </Link>
           </div>
 

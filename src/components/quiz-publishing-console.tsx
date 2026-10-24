@@ -70,7 +70,11 @@ function formatTimestamp(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
-export function QuizPublishingConsole() {
+export function QuizPublishingConsole({
+  view,
+}: {
+  view: "import" | "manage";
+}) {
   const [quizzes, setQuizzes] = useState<AdminQuizListItem[]>([]);
   const [editor, setEditor] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -96,6 +100,7 @@ export function QuizPublishingConsole() {
   const [loading, setLoading] = useState(true);
 
   const loadQuizzes = useCallback(async () => {
+    if (view !== "manage") return;
     setLoading(true);
     try {
       const response = await fetch("/api/admin/quizzes", { cache: "no-store" });
@@ -107,7 +112,7 @@ export function QuizPublishingConsole() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     void loadQuizzes();
@@ -543,6 +548,7 @@ export function QuizPublishingConsole() {
 
   return (
     <section style={{ display: "grid", gap: 24 }}>
+      {view === "manage" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
@@ -641,7 +647,9 @@ export function QuizPublishingConsole() {
           ))}
         </div>
       </div>
+      ) : null}
 
+      {view === "import" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Bulk quiz import</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
@@ -734,7 +742,9 @@ export function QuizPublishingConsole() {
           </div>
         )}
       </div>
+      ) : null}
 
+      {view === "manage" ? (
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>{editingId ? "Edit draft" : "Import or create a quiz"}</h2>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
@@ -816,6 +826,7 @@ export function QuizPublishingConsole() {
           Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date in its timezone. Publication validates the content again on the server; timestamps are stored in UTC.
         </p>
       </div>
+      ) : null}
     </section>
   );
 }

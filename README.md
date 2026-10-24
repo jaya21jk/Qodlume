@@ -16,7 +16,7 @@ npm run validate:quizzes
 
 ## Publishing workflow
 
-Sign in at `/admin` using the `ADMIN_PASSWORD` Worker secret. The admin publishing workspace at `/admin/import` supports:
+Sign in at `/admin` using the `ADMIN_PASSWORD` Worker secret. Quiz imports are handled at `/admin/import`, and existing quiz content is managed at `/admin/quizzes`. The admin workspace provides:
 
 - Creating and editing drafts or importing existing quiz JSON.
 - Validating and previewing content before saving.
@@ -29,11 +29,11 @@ Public quiz payloads omit answer keys and explanations. Answers are graded on th
 
 ### Bulk quiz imports and scheduling
 
-In `/admin/import`, choose or paste either one quiz JSON object or an array of quiz objects in the existing quiz format. Preview each record's status, timezone, resolved schedule, validation errors, and conflicts before confirming **Save all as Draft** or **Schedule valid records**. Draft imports remain drafts regardless of their publication date. Scheduling an item without `scheduledAt` resolves to `00:00` on its publication date in its configured timezone (default `Asia/Kolkata`); explicit ISO timestamps with offsets are honored after date/timezone validation. Timestamps are normalized to UTC. Invalid items and duplicates are reported individually; existing quizzes and question IDs are never overwritten. A single quiz can be scheduled with **Schedule Publication**, or multiple drafts can be scheduled from the list. Public quiz APIs return only published records.
+In `/admin/import`, choose or paste either one quiz JSON object or an array of quiz objects in the existing quiz format. Preview each record's status, timezone, resolved schedule, validation errors, and conflicts before confirming **Save all as Draft** or **Schedule valid records**. Draft imports remain drafts regardless of their publication date. Scheduling an item without `scheduledAt` resolves to `00:00` on its publication date in its configured timezone (default `Asia/Kolkata`); explicit ISO timestamps with offsets are honored after date/timezone validation. Timestamps are normalized to UTC. Invalid items and duplicates are reported individually; existing quizzes and question IDs are never overwritten. Manage existing drafts, scheduled items, published quizzes, and archived content at `/admin/quizzes`, where individual and bulk schedule actions are available. Public quiz APIs return only published records.
 
 ## Daily game challenges
 
-Manage Reaction Time Challenge, Word Guess, and Memory Match content at `/admin/daily-games`. Daily game configurations are stored in the `daily_game_challenges` D1 table, separate from game rendering and logic. Create drafts as JSON, preview and validate them, then publish immediately or schedule them. Drafts never publish automatically. Scheduling without an explicit `scheduledAt` resolves to `00:00` on the publication date in its configured timezone (default `Asia/Kolkata`); explicit ISO timestamps with offsets are honored after validation and normalized to UTC. Only draft or unpublished items can be edited; a unique game/date constraint prevents accidental replacement of an existing record. Unpublishing makes the challenge unavailable without deleting it.
+Import Reaction Time Challenge, Word Guess, and Memory Match content at `/admin/daily-games`; review and manage existing drafts, scheduled challenges, and published records separately at `/admin/game-management`. Daily game configurations are stored in the `daily_game_challenges` D1 table, separate from game rendering and logic. Imports can be previewed and validated before saving as drafts or scheduling. Drafts never publish automatically. Scheduling without an explicit `scheduledAt` resolves to `00:00` on the publication date in its configured timezone (default `Asia/Kolkata`); explicit ISO timestamps with offsets are honored after validation and normalized to UTC. Only draft or unpublished items can be edited; a unique game/date constraint prevents accidental replacement of an existing record. Unpublishing makes the challenge unavailable without deleting it.
 
 The public game endpoints choose the challenge matching the current `publicationDate` in that record’s IANA timezone. Scheduled challenges become published on the existing one-minute Worker Cron Trigger. The Word Guess answer is stored once in the challenge configuration, so every player receives the same answer for that date. Browser-local progress is keyed by game and publication date; game personal records remain separate from challenge configuration.
 
