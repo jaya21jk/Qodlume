@@ -244,50 +244,25 @@ export default function WordGuessPage() {
           {message}
         </div>
 
-        {!gameOver ? (
-          <form
-            className="word-guess-entry"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!canSubmit) {
-                setMessage("Enter all five letters before checking your guess.");
-                inputRef.current?.focus();
-                return;
-              }
-              void revealBoard(currentGuess);
-            }}
-          >
-            <label htmlFor="word-guess-input">Your five-letter guess</label>
-            <div className="word-guess-entry-row">
-              <input
-                ref={inputRef}
-                id="word-guess-input"
-                type="text"
-                value={currentGuess}
-                onChange={(event) => updateCurrentGuess(event.target.value)}
-                maxLength={WORD_LENGTH}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                inputMode="text"
-                enterKeyHint="go"
-                placeholder="Tap here to type"
-                disabled={submitting || !challenge}
-                aria-describedby="word-guess-input-help"
-              />
-              <button type="submit" disabled={!canSubmit || submitting}>
-                {submitting ? "Checking…" : "Guess"}
-              </button>
-            </div>
-            <p id="word-guess-input-help">
-              Tap the field to open your phone&apos;s keyboard. Press Enter or tap Guess to submit.
-            </p>
-          </form>
-        ) : null}
-
+        <form
+          className="word-guess-board-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!canSubmit) {
+              setMessage("Enter all five letters before checking your guess.");
+              inputRef.current?.focus();
+              return;
+            }
+            void revealBoard(currentGuess);
+          }}
+        >
         <div style={{ display: "grid", gap: 10, justifyItems: "center" }}>
           {board.map((row, rowIndex) => (
-            <div key={`row-${rowIndex}`} style={{ display: "grid", gridTemplateColumns: `repeat(${WORD_LENGTH}, minmax(0, 1fr))`, gap: 8, width: "min(100%, 360px)" }}>
+            <div
+              key={`row-${rowIndex}`}
+              className={rowIndex === currentRow && !gameOver ? "word-guess-active-row" : undefined}
+              style={{ position: "relative", display: "grid", gridTemplateColumns: `repeat(${WORD_LENGTH}, minmax(0, 1fr))`, gap: 8, width: "min(100%, 360px)" }}
+            >
               {row.map((cell, columnIndex) => {
                 const state = feedback[rowIndex]?.[columnIndex] ?? "absent";
                 const hasLetter = Boolean(cell);
@@ -333,9 +308,42 @@ export default function WordGuessPage() {
                   </div>
                 );
               })}
+              {rowIndex === currentRow && !gameOver ? (
+                <input
+                  ref={inputRef}
+                  className="word-guess-board-input"
+                  type="text"
+                  value={currentGuess}
+                  onChange={(event) => updateCurrentGuess(event.target.value)}
+                  maxLength={WORD_LENGTH}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  inputMode="text"
+                  enterKeyHint="go"
+                  disabled={submitting || !challenge}
+                  aria-label="Type your five-letter guess in the highlighted row"
+                  aria-describedby="word-guess-input-help"
+                />
+              ) : null}
             </div>
           ))}
         </div>
+        {!gameOver ? (
+          <>
+            <p id="word-guess-input-help" className="word-guess-board-help">
+              Tap the highlighted row to type. Press Enter or use the button to submit.
+            </p>
+            <button
+              className="word-guess-submit"
+              type="submit"
+              disabled={!canSubmit || submitting}
+            >
+              {submitting ? "Checking…" : "Submit guess"}
+            </button>
+          </>
+        ) : null}
+        </form>
 
         <div className="word-guess-color-guide" aria-label="Guess color guide">
           <span><i className="guide-correct" />Correct letter and position</span>

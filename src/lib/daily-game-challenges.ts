@@ -14,6 +14,7 @@ import {
 import { isValidCalendarDate } from "./quiz-validator";
 import {
   normalizeScheduledPublicationTime,
+  stableJson,
   validateScheduledPublicationDate,
 } from "./quiz-publishing";
 
@@ -262,6 +263,21 @@ export function validateDailyGameChallenge(
       publishedAt: typeof value.publishedAt === "string" ? value.publishedAt : undefined,
     } as DailyGameChallenge,
   };
+}
+
+export function areDailyGameChallengeContentsEqual(
+  left: DailyGameChallenge,
+  right: DailyGameChallenge,
+): boolean {
+  return (
+    (!left.id || left.id === right.id) &&
+    left.publicationDate === right.publicationDate &&
+    left.timezone === right.timezone &&
+    left.gameType === right.gameType &&
+    left.title === right.title &&
+    left.description === right.description &&
+    stableJson(left.configuration) === stableJson(right.configuration)
+  );
 }
 
 export function validateDailySchedule(

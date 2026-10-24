@@ -383,16 +383,25 @@ export function QuizPublishingConsole() {
           quiz.scheduledAt,
         );
         if ("error" in publication) errors.push(publication.error);
-        if (quizzes.some((existing) => existing.id === quiz.id)) {
+        const existingQuiz = quizzes.find((existing) =>
+          existing.id === quiz.id || existing.publicationDate === quiz.publicationDate,
+        );
+        const canScheduleExistingDraft =
+          mode === "schedule" &&
+          existingQuiz?.id === quiz.id &&
+          existingQuiz.publicationDate === quiz.publicationDate &&
+          (existingQuiz.status === "draft" || existingQuiz.status === "validated");
+        if (existingQuiz && !canScheduleExistingDraft) {
           errors.push(`Duplicate quiz ID "${quiz.id}".`);
         }
-        if (
-          quizzes.some((existing) => existing.publicationDate === quiz.publicationDate)
-        ) {
+        if (existingQuiz && !canScheduleExistingDraft) {
           errors.push(`Publication date "${quiz.publicationDate}" already exists.`);
         }
         const questionConflict = quiz.questions.find((question) =>
-          quizzes.some((existing) => existing.questionIds.includes(question.id)),
+          quizzes.some((existing) =>
+            existing.id !== existingQuiz?.id &&
+            existing.questionIds.includes(question.id),
+          ),
         );
         if (questionConflict) errors.push(`Question ID "${questionConflict.id}" is duplicated or already exists.`);
         return {
@@ -423,7 +432,7 @@ export function QuizPublishingConsole() {
 
   const importBulkQuizzes = async (mode: "draft" | "schedule") => {
     if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
-      setError(`Validate a preview for "${mode === "draft" ? "Save all as Draft" : "Schedule valid records"}" before confirming.`);
+      parseBulkQuizzes(mode);
       return;
     }
     const validCount = bulkPreview.filter((item) => item.valid).length;
@@ -690,8 +699,7 @@ export function QuizPublishingConsole() {
             <select
               value={bulkPreviewMode ?? "draft"}
               onChange={(event) => {
-                setBulkPreviewMode(event.target.value as "draft" | "schedule");
-                setBulkPreview([]);
+                parseBulkQuizzes(event.target.value as "draft" | "schedule");
               }}
               aria-label="Bulk quiz preview mode"
             >

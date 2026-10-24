@@ -9,6 +9,7 @@ import {
 } from "../src/lib/admin-auth";
 import {
   canEditQuiz,
+  areQuizContentsEqual,
   dateTimeLocalToUtc,
   dateTimeUtcToLocal,
   findQuizImportBatchConflicts,
@@ -199,6 +200,27 @@ test("bulk quiz import detects repeated record IDs, dates, and question IDs", ()
       'Duplicate publication date "2026-10-23" in this import.',
       'Question ID "publishing-test-question" is duplicated within this import.',
     ],
+  );
+});
+
+test("existing draft quiz content comparison ignores JSON property ordering", () => {
+  const original = makeQuiz();
+  const reordered: Quiz = {
+    ...original,
+    questions: [
+      {
+        explanation: original.questions[0].explanation,
+        correctOptionId: original.questions[0].correctOptionId,
+        options: original.questions[0].options,
+        prompt: original.questions[0].prompt,
+        id: original.questions[0].id,
+      },
+    ],
+  };
+  assert.equal(areQuizContentsEqual(original, reordered), true);
+  assert.equal(
+    areQuizContentsEqual(original, { ...reordered, title: "Changed draft" }),
+    false,
   );
 });
 

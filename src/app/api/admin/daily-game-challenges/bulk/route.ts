@@ -4,6 +4,7 @@ import {
   readJsonBody,
 } from "../../../../../lib/admin-api";
 import {
+  areDailyGameChallengeContentsEqual,
   validateDailyGameChallenge,
   validateDailySchedule,
 } from "../../../../../lib/daily-game-challenges";
@@ -52,7 +53,7 @@ export async function POST(request: Request): Promise<Response> {
       index: number;
       publicationDate?: string;
       gameType?: string;
-      status: "created" | "failed" | "duplicate";
+      status: "created" | "scheduled" | "failed" | "duplicate";
       publicationStatus?: "draft" | "scheduled";
       timezone?: string;
       scheduledAt?: string;
@@ -100,10 +101,60 @@ export async function POST(request: Request): Promise<Response> {
       let draftCreated = false;
       try {
         const existing = await db
-          .prepare("SELECT id FROM daily_game_challenges WHERE game_type = ? AND publication_date = ? LIMIT 1")
+          .prepare("SELECT id, status FROM daily_game_challenges WHERE game_type = ? AND publication_date = ? LIMIT 1")
           .bind(challenge.gameType, challenge.publicationDate)
-          .first<{ id: string }>();
+          .first<{ id: string; status: string }>();
         if (existing) {
+          if (
+            mode === "schedule" &&
+            (existing.status === "draft" || existing.status === "unpublished")
+          ) {
+            const savedChallenge = await getAdminDailyGameChallenge(db, existing.id);
+            if (
+              !savedChallenge ||
+              !areDailyGameChallengeContentsEqual(challenge, savedChallenge)
+            ) {
+              results.push({
+                index,
+                publicationDate: challenge.publicationDate,
+                gameType: challenge.gameType,
+                status: "duplicate",
+                errors: ["An existing draft has different content. Edit that draft or import a matching record; it was not overwritten."],
+              });
+              continue;
+            }
+            const schedule = validateDailySchedule(
+              savedChallenge.publicationDate,
+              savedChallenge.timezone,
+              challenge.scheduledAt,
+            );
+            if ("error" in schedule) {
+              results.push({
+                index,
+                publicationDate: challenge.publicationDate,
+                gameType: challenge.gameType,
+                status: "failed",
+                errors: [schedule.error],
+              });
+              continue;
+            }
+            await setDailyGameChallengeStatus(
+              db,
+              savedChallenge.id,
+              "scheduled",
+              schedule.scheduledAt,
+            );
+            results.push({
+              index,
+              publicationDate: challenge.publicationDate,
+              gameType: challenge.gameType,
+              status: "scheduled",
+              publicationStatus: "scheduled",
+              timezone: challenge.timezone,
+              scheduledAt: schedule.scheduledAt,
+            });
+            continue;
+          }
           results.push({
             index,
             publicationDate: challenge.publicationDate,

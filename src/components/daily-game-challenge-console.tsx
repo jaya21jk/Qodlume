@@ -389,13 +389,18 @@ export function DailyGameChallengeConsole() {
         }
         const challenge = report.challenge;
         const key = `${challenge.gameType}:${challenge.publicationDate}`;
+        const existingChallenge = challenges.find(
+          (existing) =>
+            existing.gameType === challenge.gameType &&
+            existing.publicationDate === challenge.publicationDate,
+        );
+        const canScheduleExistingDraft =
+          mode === "schedule" &&
+          (existingChallenge?.status === "draft" ||
+            existingChallenge?.status === "unpublished");
         const duplicate =
           seen.has(key) ||
-          challenges.some(
-            (existing) =>
-              existing.gameType === challenge.gameType &&
-              existing.publicationDate === challenge.publicationDate,
-          );
+          (Boolean(existingChallenge) && !canScheduleExistingDraft);
         seen.add(key);
         const publication = resolveImportPublication(
           mode,
@@ -435,7 +440,7 @@ export function DailyGameChallengeConsole() {
 
   const importBulkChallenges = async (mode: "draft" | "schedule") => {
     if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
-      setError(`Validate a preview for "${mode === "draft" ? "Save all as Draft" : "Schedule valid records"}" before confirming.`);
+      parseBulkChallenges(mode);
       return;
     }
     const validCount = bulkPreview.filter((item) => item.valid).length;
@@ -709,8 +714,7 @@ export function DailyGameChallengeConsole() {
             <select
               value={bulkPreviewMode ?? "draft"}
               onChange={(event) => {
-                setBulkPreviewMode(event.target.value as "draft" | "schedule");
-                setBulkPreview([]);
+                parseBulkChallenges(event.target.value as "draft" | "schedule");
               }}
               aria-label="Bulk game preview mode"
             >

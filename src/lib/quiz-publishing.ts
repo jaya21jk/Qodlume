@@ -45,6 +45,39 @@ export function findQuizImportBatchConflicts(
   return errors;
 }
 
+export function areQuizContentsEqual(left: Quiz, right: Quiz): boolean {
+  const content = (quiz: Quiz) => ({
+    id: quiz.id,
+    version: quiz.version,
+    publicationDate: quiz.publicationDate,
+    timezone: quiz.timezone,
+    title: quiz.title,
+    description: quiz.description,
+    topic: quiz.topic,
+    difficulty: quiz.difficulty,
+    estimatedDurationMinutes: quiz.estimatedDurationMinutes,
+    author: quiz.author,
+    previousVersionId: quiz.previousVersionId,
+    questions: quiz.questions,
+  });
+  return stableJson(content(left)) === stableJson(content(right));
+}
+
+export function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 export function dateTimeLocalToUtc(
   value: string,
   timezone: string,

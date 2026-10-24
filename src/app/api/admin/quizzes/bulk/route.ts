@@ -4,6 +4,7 @@ import {
   readJsonBody,
 } from "../../../../../lib/admin-api";
 import {
+  areQuizContentsEqual,
   canEditQuiz,
   findQuizImportBatchConflicts,
   normalizeScheduledPublicationTime,
@@ -59,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
       index: number;
       id?: string;
       publicationDate?: string;
-      status: "created" | "failed" | "duplicate";
+      status: "created" | "scheduled" | "failed" | "duplicate";
       publicationStatus?: "draft" | "scheduled";
       timezone?: string;
       scheduledAt?: string;
@@ -139,11 +140,58 @@ export async function POST(request: Request): Promise<Response> {
       try {
         const existing = await db
           .prepare(
-            "SELECT id FROM quizzes WHERE id = ? OR publication_date = ? LIMIT 1",
+            "SELECT id, publication_date, status FROM quizzes WHERE id = ? OR publication_date = ? LIMIT 1",
           )
           .bind(quiz.id, quiz.publicationDate)
-          .first<{ id: string }>();
+          .first<{ id: string; publication_date: string; status: string }>();
         if (existing) {
+          if (
+            mode === "schedule" &&
+            existing.id === quiz.id &&
+            existing.publication_date === quiz.publicationDate &&
+            (existing.status === "draft" || existing.status === "validated")
+          ) {
+            const savedQuiz = await getAdminQuizById(db, existing.id);
+            if (!savedQuiz || !areQuizContentsEqual(quiz, savedQuiz)) {
+              results.push({
+                index,
+                id: quiz.id,
+                publicationDate: quiz.publicationDate,
+                status: "duplicate",
+                errors: ["An existing draft has different content. Edit that draft or import a matching record; it was not overwritten."],
+              });
+              continue;
+            }
+            const schedule = normalizeScheduledPublicationTime(
+              savedQuiz.publicationDate,
+              savedQuiz.timezone,
+              quiz.scheduledAt,
+            );
+            if ("error" in schedule) {
+              results.push({
+                index,
+                id: quiz.id,
+                publicationDate: quiz.publicationDate,
+                status: "failed",
+                errors: [schedule.error],
+              });
+              continue;
+            }
+            await setQuizStatus(db, savedQuiz.id, "scheduled", {
+              scheduledAt: schedule.scheduledAt,
+              expectedStatus: savedQuiz.status,
+            });
+            results.push({
+              index,
+              id: quiz.id,
+              publicationDate: quiz.publicationDate,
+              status: "scheduled",
+              publicationStatus: "scheduled",
+              timezone: quiz.timezone,
+              scheduledAt: schedule.scheduledAt,
+            });
+            continue;
+          }
           results.push({
             index,
             id: quiz.id,

@@ -4,6 +4,7 @@ import {
   evaluateWordGuess,
 } from "../src/lib/game-logic";
 import {
+  areDailyGameChallengeContentsEqual,
   getDateInTimezone,
   isDailyChallengeAvailable,
   toPublicDailyGameChallenge,
@@ -199,6 +200,23 @@ test("scheduled game imports validate explicit offsets and reject malformed or c
     publicationDate: "2026-10-25",
     status: "scheduled",
     scheduledAt: "2026-10-25T00:15:00+05:30",
+  });
+
+  test("an identical existing game draft can be recognized without overwriting its content", () => {
+    const imported = makeChallenge({ id: "" });
+    const saved = makeChallenge({
+      id: "word-guess-2026-10-24",
+      status: "draft",
+      scheduledAt: "2026-10-24T18:30:00.000Z",
+    });
+    assert.equal(areDailyGameChallengeContentsEqual(imported, saved), true);
+    assert.equal(
+      areDailyGameChallengeContentsEqual(imported, {
+        ...saved,
+        title: "Changed draft",
+      }),
+      false,
+    );
   });
   assert.equal(validateDailyGameChallenge(explicit).valid, true);
   assert.deepEqual(

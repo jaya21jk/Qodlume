@@ -839,69 +839,61 @@
   font-weight: 750;
 }
 
-.word-guess-entry {
+.word-guess-board-form {
   display: grid;
   justify-items: center;
-  gap: 8px;
-  width: min(100%, 420px);
+  gap: 12px;
+  width: 100%;
   margin: 0 auto;
 }
 
-.word-guess-entry label {
-  color: #34405f;
-  font-size: 0.9rem;
-  font-weight: 800;
+.word-guess-active-row:focus-within > div {
+  border-color: #6755e8 !important;
+  box-shadow: 0 0 0 3px rgba(103, 85, 232, 0.14);
 }
 
-.word-guess-entry-row {
-  display: flex;
+.word-guess-board-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   width: 100%;
-  gap: 8px;
-}
-
-.word-guess-entry-row input {
-  min-width: 0;
-  min-height: 52px;
-  flex: 1;
+  height: 100%;
   box-sizing: border-box;
-  padding: 0 15px;
-  border: 2px solid #cbd5e1;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 14px;
   outline: none;
-  background: white;
-  color: #172033;
-  font-size: 1.25rem;
-  font-weight: 850;
-  letter-spacing: 0.25em;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  cursor: text;
+  opacity: 0.01;
+  font-size: 1rem;
+}
+
+.word-guess-board-help {
+  margin: 0;
+  color: #64708a;
+  font-size: 0.82rem;
   text-align: center;
 }
 
-.word-guess-entry-row input:focus {
-  border-color: #6755e8;
-  box-shadow: 0 0 0 4px rgba(103, 85, 232, 0.14);
-}
-
-.word-guess-entry-row button {
-  min-width: 84px;
-  min-height: 52px;
-  padding: 0 16px;
+.word-guess-submit {
+  min-height: 48px;
+  padding: 0 22px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 999px;
   background: linear-gradient(120deg, #6849e8, #923fea);
   color: white;
   font-weight: 850;
+  cursor: pointer;
 }
 
-.word-guess-entry-row button:disabled {
+.word-guess-submit:disabled {
   background: #cbd5e1;
   color: #64748b;
-}
-
-.word-guess-entry > p {
-  margin: 0;
-  color: #64708a;
-  font-size: 0.78rem;
-  text-align: center;
+  cursor: not-allowed;
 }
 
 .word-guess-color-guide {
