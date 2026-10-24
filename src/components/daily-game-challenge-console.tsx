@@ -409,7 +409,7 @@ export function DailyGameChallengeConsole() {
 
   return (
     <section style={{ display: "grid", gap: 20 }}>
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: "0 0 8px" }}>Daily game challenges</h2>
@@ -502,7 +502,7 @@ export function DailyGameChallengeConsole() {
         </div>
       </div>
 
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Import games</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
           Paste one challenge object or a JSON array. Imports are previewed and saved as drafts only; duplicates are reported rather than replaced.
@@ -579,7 +579,7 @@ export function DailyGameChallengeConsole() {
         )}
       </div>
 
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>{editingId ? "Edit challenge draft" : "Create or edit a challenge"}</h2>
         {!editingId && (
           <label style={{ display: "grid", gap: 6, maxWidth: 360, marginBottom: 14 }}>

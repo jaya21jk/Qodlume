@@ -64,6 +64,7 @@ export function QuizPlayer({ quiz }: { quiz: PublicQuiz }) {
 
   return (
     <div
+      className="quiz-player"
       style={{
         background: "rgba(255,255,255,0.88)",
         border: "1px solid rgba(148,163,184,0.3)",
@@ -159,6 +160,7 @@ export function QuizPlayer({ quiz }: { quiz: PublicQuiz }) {
           return (
             <li
               key={question.id}
+              className="quiz-question"
               style={{
                 marginBottom: 30,
                 padding: 18,

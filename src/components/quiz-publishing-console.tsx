@@ -404,7 +404,7 @@ export function QuizPublishingConsole() {
 
   return (
     <section style={{ display: "grid", gap: 24 }}>
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <header style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <h2 style={{ margin: "0 0 8px" }}>Quizzes</h2>
@@ -501,7 +501,7 @@ export function QuizPublishingConsole() {
         </div>
       </div>
 
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Bulk quiz import</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
           Paste one quiz or a JSON array, or select a JSON file. Valid entries are saved as drafts; existing IDs or publication dates are never replaced.
@@ -573,7 +573,7 @@ export function QuizPublishingConsole() {
         )}
       </div>
 
-      <div style={panelStyle}>
+      <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>{editingId ? "Edit draft" : "Import or create a draft"}</h2>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
           <label style={buttonStyle}>

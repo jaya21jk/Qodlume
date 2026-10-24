@@ -14,6 +14,7 @@ export function GameShell({
 }) {
   return (
     <main
+      className="game-shell"
       style={{
         maxWidth: 1200,
         margin: "0 auto",
