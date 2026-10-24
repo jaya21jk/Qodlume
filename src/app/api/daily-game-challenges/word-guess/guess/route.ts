@@ -33,13 +33,6 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const guess = body.guess.toUpperCase();
-    if (!challenge.configuration.validWords.includes(guess)) {
-      return Response.json({ error: "That word is not in today’s accepted word list." }, {
-        status: 422,
-        headers: { "Cache-Control": "no-store" },
-      });
-    }
-
     const feedback = evaluateWordGuess(guess, challenge.configuration.answer);
     return Response.json({
       feedback,

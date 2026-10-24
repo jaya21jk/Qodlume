@@ -181,7 +181,7 @@ export default function WordGuessPage() {
       if (result.won) {
         setHasWon(true);
         setGameOver(true);
-        setMessage("You solved it! Great work.");
+        setMessage("Congratulations! You guessed the word!");
         return;
       }
 
