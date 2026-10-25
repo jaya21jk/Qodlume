@@ -72,7 +72,7 @@ export default function GamesPage() {
         </Link>
         <nav className="games-nav" aria-label="Main navigation">
           <Link href="/">Home</Link>
-          <Link href="/archive">Quizzes</Link>
+          <Link href="/quizzes">Quizzes</Link>
           <Link href="/games" aria-current="page">Games</Link>
           <a href="#about">About</a>
         </nav>
@@ -81,7 +81,7 @@ export default function GamesPage() {
           <summary aria-label="Open navigation menu"><span /><span /><span /></summary>
           <nav aria-label="Mobile navigation">
             <Link href="/">Home</Link>
-            <Link href="/archive">Quizzes</Link>
+            <Link href="/quizzes">Quizzes</Link>
             <Link href="/games" aria-current="page">Games</Link>
             <a href="#about">About</a>
             <Link href="/admin">Sign In</Link>

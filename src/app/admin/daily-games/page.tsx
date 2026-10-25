@@ -30,7 +30,7 @@ export default function AdminDailyGamesPage() {
           Import daily game challenges
         </h1>
         <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.7 }}>
-          Import one or many daily game challenges, review their validation and schedule, and explicitly save drafts or schedule valid records.
+          Import one or many daily game challenges, review validation and schedules, then save drafts, schedule, or publish valid records immediately.
         </p>
       </header>
       <DailyGameChallengeConsole view="import" />

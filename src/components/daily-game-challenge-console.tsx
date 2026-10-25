@@ -328,6 +328,69 @@ export function DailyGameChallengeConsole({
     }
   };
 
+  const publishEditor = async () => {
+    const challenge = validateEditor();
+    if (!challenge) {
+      setError("Fix the challenge content before publishing.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Publish "${challenge.title}" now for ${challenge.publicationDate}?`,
+      )
+    ) {
+      return;
+    }
+
+    const endpoint = editingId
+      ? `/api/admin/daily-game-challenges/${encodeURIComponent(editingId)}`
+      : "/api/admin/daily-game-challenges";
+    setBusy("publish-editor");
+    setError("");
+    try {
+      const saveResponse = await fetch(endpoint, {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge: {
+            ...challenge,
+            id: editingId ?? "",
+            status: "draft",
+            scheduledAt: undefined,
+          },
+        }),
+      });
+      const saved = (await saveResponse.json()) as ApiResult;
+      if (!saveResponse.ok || !saved.challenge) {
+        if (saved.validation) setValidation(saved.validation);
+        throw new Error(saved.error ?? "Unable to save challenge before publishing.");
+      }
+
+      const publishResponse = await fetch(
+        `/api/admin/daily-game-challenges/${encodeURIComponent(saved.challenge.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "publish" }),
+        },
+      );
+      const result = (await publishResponse.json()) as ApiResult;
+      if (!publishResponse.ok || !result.challenge) {
+        throw new Error(
+          `Challenge saved as a draft, but publishing failed: ${result.error ?? "Unable to publish now."}`,
+        );
+      }
+      setEditingId(null);
+      setEditor(JSON.stringify(result.challenge, null, 2));
+      await loadChallenges();
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Unable to publish challenge.");
+      await loadChallenges();
+    } finally {
+      setBusy("");
+    }
+  };
+
   const runAction = async (challenge: DailyGameChallenge, action: "publish" | "schedule" | "unpublish") => {
     let scheduledAt: string | undefined;
     if (action === "schedule") {
@@ -980,12 +1043,15 @@ export function DailyGameChallengeConsole({
           <button type="button" disabled={!editor || busy !== ""} onClick={() => void scheduleEditor()} style={primaryButtonStyle}>
             {busy === "schedule-editor" ? "Scheduling…" : "Schedule Publication"}
           </button>
+          <button type="button" disabled={!editor || busy !== ""} onClick={() => void publishEditor()} style={primaryButtonStyle}>
+            {busy === "publish-editor" ? "Publishing…" : "Publish now"}
+          </button>
           {editingId && (
             <button type="button" onClick={() => startNew()} style={buttonStyle}>Cancel edit</button>
           )}
         </div>
         <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6 }}>
-          All times use the challenge timezone. Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date; publication validates again on the server.
+          All times use the challenge timezone. Save as Draft never auto-publishes. Schedule Publication uses an imported explicit scheduledAt value when present, otherwise midnight on the publication date. Publish now makes this specific challenge live immediately and validates again on the server.
         </p>
       </div>
       ) : null}

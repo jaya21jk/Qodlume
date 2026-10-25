@@ -1,14 +1,6 @@
 import Link from "next/link";
 
-export function HomeShowcase({
-  quiz,
-  topics,
-  topicLabels,
-}: {
-  quiz: { title: string; description: string; publicationDate: string } | null;
-  topics: string[];
-  topicLabels: Record<string, string>;
-}) {
+export function HomeShowcase() {
   return (
     <main className="home">
       <header className="site-header">
@@ -16,7 +8,7 @@ export function HomeShowcase({
           Qodlume<span className="brand-dot">.</span>
         </Link>
         <nav aria-label="Main navigation" className="header-nav">
-          <Link href="/archive">Quiz archive</Link>
+          <Link href="/quizzes">Quizzes</Link>
           <Link href="/games">Games</Link>
         </nav>
       </header>
@@ -31,7 +23,7 @@ export function HomeShowcase({
         </div>
 
         <div className="feature-grid" aria-label="Explore Qodlume">
-          <Link href="/archive" className="feature-card quiz-card">
+          <Link href="/quizzes" className="feature-card quiz-card">
             <div className="illustration quiz-illustration" aria-hidden="true">
               <div className="quiz-sheet">
                 <span className="sheet-line line-one" />
@@ -70,51 +62,10 @@ export function HomeShowcase({
         </div>
       </section>
 
-      <section className="daily-section" aria-labelledby="daily-heading">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Fresh for curious minds</p>
-            <h2 id="daily-heading">Today&apos;s quiz</h2>
-          </div>
-          {topics.length > 0 && (
-            <div className="topic-list" aria-label="Quiz topics">
-              {topics.slice(0, 4).map((topic) => (
-                <span key={topic}>{topicLabels[topic] ?? topic}</span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <article className="daily-card">
-          {quiz ? (
-            <>
-              <div>
-                <span className="date-pill">{quiz.publicationDate}</span>
-                <h3>{quiz.title}</h3>
-                <p>{quiz.description}</p>
-              </div>
-              <Link className="daily-cta" href={`/quiz/${quiz.publicationDate}`}>
-                Start today&apos;s quiz <span aria-hidden="true">→</span>
-              </Link>
-            </>
-          ) : (
-            <>
-              <div>
-                <h3>No quiz is available today</h3>
-                <p>Browse published challenges and choose one to play.</p>
-              </div>
-              <Link className="daily-cta" href="/archive">
-                Browse quizzes <span aria-hidden="true">→</span>
-              </Link>
-            </>
-          )}
-        </article>
-      </section>
-
       <footer className="site-footer">
         <Link href="/" className="brand">Qodlume<span className="brand-dot">.</span></Link>
         <span>Take a quick break. Leave a little sharper.</span>
-        <Link href="/archive">Browse the quiz archive</Link>
+        <Link href="/quizzes/previous">Browse previous quizzes</Link>
       </footer>
 
     </main>
