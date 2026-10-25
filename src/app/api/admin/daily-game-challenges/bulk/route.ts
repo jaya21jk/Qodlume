@@ -37,8 +37,8 @@ export async function POST(request: Request): Promise<Response> {
       return adminJson({ error: "Bulk imports are limited to 100 challenges." }, 413);
     }
     const mode = "mode" in body ? body.mode : "draft";
-    if (mode !== "draft" && mode !== "schedule") {
-      return adminJson({ error: "Import mode must be draft or schedule." }, 400);
+    if (mode !== "draft" && mode !== "schedule" && mode !== "publish") {
+      return adminJson({ error: "Import mode must be draft, schedule, or publish." }, 400);
     }
 
     let db: Awaited<ReturnType<typeof getDatabase>>;
@@ -54,7 +54,7 @@ export async function POST(request: Request): Promise<Response> {
       publicationDate?: string;
       gameType?: string;
       status: "created" | "scheduled" | "failed" | "duplicate";
-      publicationStatus?: "draft" | "scheduled";
+      publicationStatus?: "draft" | "scheduled" | "published";
       timezone?: string;
       scheduledAt?: string;
       challenge?: DailyGameChallenge;
@@ -106,7 +106,7 @@ export async function POST(request: Request): Promise<Response> {
           .first<{ id: string; status: string }>();
         if (existing) {
           if (
-            mode === "schedule" &&
+            mode !== "draft" &&
             (existing.status === "draft" || existing.status === "unpublished")
           ) {
             const savedChallenge = await getAdminDailyGameChallenge(db, existing.id);
@@ -123,35 +123,48 @@ export async function POST(request: Request): Promise<Response> {
               });
               continue;
             }
-            const schedule = validateDailySchedule(
-              savedChallenge.publicationDate,
-              savedChallenge.timezone,
-              challenge.scheduledAt,
-            );
-            if ("error" in schedule) {
+            if (publication.status === "published") {
+              await setDailyGameChallengeStatus(db, savedChallenge.id, "published");
+            } else {
+              const schedule = validateDailySchedule(
+                savedChallenge.publicationDate,
+                savedChallenge.timezone,
+                challenge.scheduledAt,
+              );
+              if ("error" in schedule) {
+                results.push({
+                  index,
+                  publicationDate: challenge.publicationDate,
+                  gameType: challenge.gameType,
+                  status: "failed",
+                  errors: [schedule.error],
+                });
+                continue;
+              }
+              await setDailyGameChallengeStatus(
+                db,
+                savedChallenge.id,
+                "scheduled",
+                schedule.scheduledAt,
+              );
               results.push({
                 index,
                 publicationDate: challenge.publicationDate,
                 gameType: challenge.gameType,
-                status: "failed",
-                errors: [schedule.error],
+                status: "scheduled",
+                publicationStatus: "scheduled",
+                timezone: challenge.timezone,
+                scheduledAt: schedule.scheduledAt,
               });
               continue;
             }
-            await setDailyGameChallengeStatus(
-              db,
-              savedChallenge.id,
-              "scheduled",
-              schedule.scheduledAt,
-            );
             results.push({
               index,
               publicationDate: challenge.publicationDate,
               gameType: challenge.gameType,
-              status: "scheduled",
-              publicationStatus: "scheduled",
+              status: publication.status === "published" ? "created" : "scheduled",
+              publicationStatus: publication.status,
               timezone: challenge.timezone,
-              scheduledAt: schedule.scheduledAt,
             });
             continue;
           }
@@ -166,12 +179,12 @@ export async function POST(request: Request): Promise<Response> {
         }
         const saved = await createDailyGameChallengeDraft(db, challenge, "admin");
         draftCreated = true;
-        if (publication.status === "scheduled") {
+        if (publication.status !== "draft") {
           await setDailyGameChallengeStatus(
             db,
             saved.id,
-            "scheduled",
-            publication.scheduledAt,
+            publication.status,
+            publication.status === "scheduled" ? publication.scheduledAt : undefined,
           );
         }
         results.push({
@@ -204,7 +217,7 @@ export async function POST(request: Request): Promise<Response> {
             error instanceof Error && /constraint/i.test(error.message)
               ? "A challenge for this game and date already exists."
               : draftCreated
-                ? `Saved as a draft, but scheduling failed: ${error instanceof Error ? error.message : "Unable to schedule publication."}`
+              ? `Saved as a draft, but publication failed: ${error instanceof Error ? error.message : "Unable to publish or schedule."}`
                 : "Unable to persist this challenge.",
           ],
         });

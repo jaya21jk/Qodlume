@@ -91,14 +91,14 @@ export function DailyGameChallengeConsole({
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
   const [bulkJson, setBulkJson] = useState("");
-  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | null>(null);
+  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | "publish" | null>(null);
   const [bulkPreview, setBulkPreview] = useState<Array<{
     index: number;
     valid: boolean;
     title?: string;
     gameType?: string;
     publicationDate?: string;
-    status?: "draft" | "scheduled";
+    status?: "draft" | "scheduled" | "published";
     timezone?: string;
     scheduledAt?: string;
     errors: string[];
@@ -379,7 +379,7 @@ export function DailyGameChallengeConsole({
     }
   };
 
-  const parseBulkChallenges = (mode: "draft" | "schedule" = "draft"): unknown[] | null => {
+  const parseBulkChallenges = (mode: "draft" | "schedule" | "publish" = "draft"): unknown[] | null => {
     try {
       const parsed: unknown = JSON.parse(bulkJson);
       const items = Array.isArray(parsed) ? parsed : [parsed];
@@ -400,7 +400,7 @@ export function DailyGameChallengeConsole({
             existing.publicationDate === challenge.publicationDate,
         );
         const canScheduleExistingDraft =
-          mode === "schedule" &&
+          mode !== "draft" &&
           (existingChallenge?.status === "draft" ||
             existingChallenge?.status === "unpublished");
         const duplicate =
@@ -443,7 +443,7 @@ export function DailyGameChallengeConsole({
     }
   };
 
-  const importBulkChallenges = async (mode: "draft" | "schedule") => {
+  const importBulkChallenges = async (mode: "draft" | "schedule" | "publish") => {
     if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
       parseBulkChallenges(mode);
       return;
@@ -454,7 +454,7 @@ export function DailyGameChallengeConsole({
       return;
     }
     if (!window.confirm(
-      `${mode === "draft" ? "Save" : "Schedule"} ${validCount} valid game challenge${validCount === 1 ? "" : "s"}? Invalid records will be skipped and reported.`,
+      `${mode === "draft" ? "Save" : mode === "publish" ? "Publish now" : "Schedule"} ${validCount} valid game challenge${validCount === 1 ? "" : "s"}? Invalid records will be skipped and reported.`,
     )) return;
     let items: unknown[];
     try {
@@ -663,7 +663,7 @@ export function DailyGameChallengeConsole({
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Import games</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
-          Preview each record before choosing Save all as Draft or Schedule valid records. Scheduled records without an explicit time use midnight in their timezone; drafts never publish automatically. Duplicates are reported rather than replaced.
+          Preview each record before saving it as a draft, scheduling it, or publishing it immediately. Scheduled records without an explicit time use midnight in their timezone. Duplicates are reported rather than replaced.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
           <label style={buttonStyle}>
@@ -715,19 +715,20 @@ export function DailyGameChallengeConsole({
         />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkChallenges(bulkPreviewMode ?? "draft")} style={buttonStyle}>
-            Preview {bulkPreviewMode === "schedule" ? "schedule" : "draft"} import
+            Preview {bulkPreviewMode ?? "draft"} import
           </button>
           <label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
             Preview mode
             <select
               value={bulkPreviewMode ?? "draft"}
               onChange={(event) => {
-                parseBulkChallenges(event.target.value as "draft" | "schedule");
+                parseBulkChallenges(event.target.value as "draft" | "schedule" | "publish");
               }}
               aria-label="Bulk game preview mode"
             >
               <option value="draft">Save all as Draft</option>
               <option value="schedule">Schedule valid records</option>
+              <option value="publish">Publish now</option>
             </select>
           </label>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges("draft")} style={buttonStyle}>
@@ -735,6 +736,9 @@ export function DailyGameChallengeConsole({
           </button>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges("schedule")} style={primaryButtonStyle}>
             {busy === "bulk-import" ? "Scheduling…" : "Schedule valid records"}
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkChallenges("publish")} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Publishing…" : "Publish valid records now"}
           </button>
         </div>
         {bulkPreview.length > 0 && (

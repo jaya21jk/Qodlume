@@ -241,13 +241,18 @@ export function validateScheduledPublicationDate(
 }
 
 export function resolveImportPublication(
-  mode: "draft" | "schedule",
+  mode: "draft" | "schedule" | "publish",
   publicationDate: string,
   timezone: string,
   scheduledAt?: string,
   now = Date.now(),
-): { status: "draft" } | { status: "scheduled"; scheduledAt: string } | { error: string } {
+):
+  | { status: "draft" }
+  | { status: "scheduled"; scheduledAt: string }
+  | { status: "published" }
+  | { error: string } {
   if (mode === "draft") return { status: "draft" };
+  if (mode === "publish") return { status: "published" };
   const result = normalizeScheduledPublicationTime(
     publicationDate,
     timezone,

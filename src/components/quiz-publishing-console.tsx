@@ -81,14 +81,14 @@ export function QuizPublishingConsole({
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({});
   const [selectedForSchedule, setSelectedForSchedule] = useState<string[]>([]);
   const [bulkJson, setBulkJson] = useState("");
-  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | null>(null);
+  const [bulkPreviewMode, setBulkPreviewMode] = useState<"draft" | "schedule" | "publish" | null>(null);
   const [bulkPreview, setBulkPreview] = useState<Array<{
     index: number;
     valid: boolean;
     id?: string;
     title?: string;
     publicationDate?: string;
-    status?: "draft" | "scheduled";
+    status?: "draft" | "scheduled" | "published";
     timezone?: string;
     scheduledAt?: string;
     errors: string[];
@@ -340,7 +340,7 @@ export function QuizPublishingConsole({
     URL.revokeObjectURL(url);
   };
 
-  const parseBulkQuizzes = (mode: "draft" | "schedule" = "draft"): unknown[] | null => {
+  const parseBulkQuizzes = (mode: "draft" | "schedule" | "publish" = "draft"): unknown[] | null => {
     try {
       const parsed: unknown = JSON.parse(bulkJson);
       const items = Array.isArray(parsed) ? parsed : [parsed];
@@ -392,7 +392,7 @@ export function QuizPublishingConsole({
           existing.id === quiz.id || existing.publicationDate === quiz.publicationDate,
         );
         const canScheduleExistingDraft =
-          mode === "schedule" &&
+          mode !== "draft" &&
           existingQuiz?.id === quiz.id &&
           existingQuiz.publicationDate === quiz.publicationDate &&
           (existingQuiz.status === "draft" || existingQuiz.status === "validated");
@@ -435,7 +435,7 @@ export function QuizPublishingConsole({
     }
   };
 
-  const importBulkQuizzes = async (mode: "draft" | "schedule") => {
+  const importBulkQuizzes = async (mode: "draft" | "schedule" | "publish") => {
     if (bulkPreviewMode !== mode || bulkPreview.length === 0) {
       parseBulkQuizzes(mode);
       return;
@@ -446,7 +446,7 @@ export function QuizPublishingConsole({
       return;
     }
     if (!window.confirm(
-      `${mode === "draft" ? "Save" : "Schedule"} ${validCount} valid quiz${validCount === 1 ? "" : "zes"}? Invalid records will be skipped and reported.`,
+      `${mode === "draft" ? "Save" : mode === "publish" ? "Publish now" : "Schedule"} ${validCount} valid quiz${validCount === 1 ? "" : "zes"}? Invalid records will be skipped and reported.`,
     )) return;
     let items: unknown[];
     try {
@@ -480,44 +480,72 @@ export function QuizPublishingConsole({
     }
   };
 
-  const bulkScheduleQuizzes = async () => {
-    const items = selectedForSchedule.map((id) => {
+  const bulkScheduleQuizzes = async (scheduleAllDrafts = false) => {
+    const quizIds = scheduleAllDrafts
+      ? quizzes
+          .filter((quiz) => quiz.status === "draft" || quiz.status === "validated")
+          .map((quiz) => quiz.id)
+      : selectedForSchedule;
+    if (
+      scheduleAllDrafts &&
+      !window.confirm(
+        `Schedule all ${quizIds.length} draft quizzes? Each quiz will use its configured time or midnight on its publication date; invalid or past dates will be reported.`,
+      )
+    ) {
+      return;
+    }
+    const items = quizIds.map((id) => {
       const quiz = quizzes.find((entry) => entry.id === id);
       const localValue = quiz
         ? scheduleInputs[id] ??
           (quiz.scheduledAt ? dateTimeUtcToLocal(quiz.scheduledAt, quiz.timezone) : undefined) ??
           `${quiz.publicationDate}T00:00`
         : "";
-      if (!quiz || !localValue.startsWith(`${quiz.publicationDate}T`)) {
-        return { id, scheduledAt: "", invalid: true };
+      if (!quiz) {
+        return { id, scheduledAt: "", error: "Quiz not found." };
+      }
+      if (!localValue.startsWith(`${quiz.publicationDate}T`)) {
+        return { id, scheduledAt: "", error: `Choose a schedule time on ${quiz.publicationDate}.` };
       }
       const converted = dateTimeLocalToUtc(localValue, quiz.timezone);
-      if ("error" in converted || Date.parse(converted.scheduledAt) <= Date.now()) {
-        return { id, scheduledAt: "", invalid: true };
+      if ("error" in converted) {
+        return { id, scheduledAt: "", error: converted.error };
       }
-      return { id, scheduledAt: converted.scheduledAt, invalid: false };
+      return { id, scheduledAt: converted.scheduledAt };
     });
-    if (items.length === 0 || items.some((item) => item.invalid)) {
-      setError("Select draft quizzes and choose a future schedule time on each quiz date.");
+    if (items.length === 0) {
+      setError(scheduleAllDrafts ? "There are no draft quizzes to schedule." : "Select draft quizzes to schedule.");
       return;
     }
+    const invalidItems = items.filter((item) => "error" in item);
+    const validItems = items.filter((item) => !("error" in item));
     setBusy("bulk-schedule");
     setError("");
     try {
-      const response = await fetch("/api/admin/quizzes/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "schedule",
-          items: items.map(({ id, scheduledAt }) => ({ id, scheduledAt })),
-        }),
-      });
-      const result = await response.json() as {
-        error?: string;
-        results?: Array<{ id: string; status: string; error?: string }>;
-      };
-      if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk scheduling failed.");
-      setBulkResults(result.results.map((item) => `${item.id}: ${item.status}${item.error ? ` — ${item.error}` : ""}`));
+      const results: Array<{ id: string; status: string; error?: string }> = invalidItems.map((item) => ({
+        id: item.id,
+        status: "failed",
+        error: item.error,
+      }));
+      setBulkResults(results.map((item) => `${item.id}: ${item.status} — ${item.error}`));
+      for (let offset = 0; offset < validItems.length; offset += 100) {
+        const response = await fetch("/api/admin/quizzes/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "schedule",
+            items: validItems.slice(offset, offset + 100).map(({ id, scheduledAt }) => ({ id, scheduledAt })),
+          }),
+        });
+        const result = await response.json() as {
+          error?: string;
+          results?: Array<{ id: string; status: string; error?: string }>;
+        };
+        if (!response.ok || !result.results) throw new Error(result.error ?? "Bulk scheduling failed.");
+        results.push(...result.results);
+        setBulkResults(results.map((item) => `${item.id}: ${item.status}${item.error ? ` — ${item.error}` : ""}`));
+      }
+      setBulkResults(results.map((item) => `${item.id}: ${item.status}${item.error ? ` — ${item.error}` : ""}`));
       setSelectedForSchedule([]);
       await loadQuizzes();
     } catch (scheduleError) {
@@ -570,6 +598,14 @@ export function QuizPublishingConsole({
             style={buttonStyle}
           >
             Schedule selected ({selectedForSchedule.length})
+          </button>
+          <button
+            type="button"
+            disabled={!quizzes.some((quiz) => quiz.status === "draft" || quiz.status === "validated") || busy !== ""}
+            onClick={() => void bulkScheduleQuizzes(true)}
+            style={primaryButtonStyle}
+          >
+            Schedule all drafts ({quizzes.filter((quiz) => quiz.status === "draft" || quiz.status === "validated").length})
           </button>
           {quizzes.map((quiz) => (
             <article key={quiz.id} style={quizCardStyle}>
@@ -646,6 +682,12 @@ export function QuizPublishingConsole({
             </article>
           ))}
         </div>
+        {bulkResults.length > 0 && (
+          <div aria-live="polite" style={{ marginTop: 16 }}>
+            <strong>Bulk scheduling results</strong>
+            {bulkResults.map((item) => <p key={item} style={{ margin: "6px 0", color: "#334155" }}>{item}</p>)}
+          </div>
+        )}
       </div>
       ) : null}
 
@@ -653,7 +695,7 @@ export function QuizPublishingConsole({
       <div className="admin-content-panel" style={panelStyle}>
         <h2 style={{ marginTop: 0 }}>Bulk quiz import</h2>
         <p style={{ color: "#475569", lineHeight: 1.6 }}>
-          Preview each record before choosing Save all as Draft or Schedule valid records. Scheduled records without an explicit time use midnight in their timezone; drafts never publish automatically. Existing IDs or publication dates are never replaced.
+          Preview each record before saving it as a draft, scheduling it, or publishing it immediately. Scheduled records without an explicit time use midnight in their timezone. Existing IDs or publication dates are never replaced.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
           <label style={buttonStyle}>
@@ -700,19 +742,20 @@ export function QuizPublishingConsole({
         />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void parseBulkQuizzes(bulkPreviewMode ?? "draft")} style={buttonStyle}>
-            Preview {bulkPreviewMode === "schedule" ? "schedule" : "draft"} import
+            Preview {bulkPreviewMode ?? "draft"} import
           </button>
           <label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
             Preview mode
             <select
               value={bulkPreviewMode ?? "draft"}
               onChange={(event) => {
-                parseBulkQuizzes(event.target.value as "draft" | "schedule");
+                parseBulkQuizzes(event.target.value as "draft" | "schedule" | "publish");
               }}
               aria-label="Bulk quiz preview mode"
             >
               <option value="draft">Save all as Draft</option>
               <option value="schedule">Schedule valid records</option>
+              <option value="publish">Publish now</option>
             </select>
           </label>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes("draft")} style={buttonStyle}>
@@ -720,6 +763,9 @@ export function QuizPublishingConsole({
           </button>
           <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes("schedule")} style={primaryButtonStyle}>
             {busy === "bulk-import" ? "Scheduling…" : "Schedule valid records"}
+          </button>
+          <button type="button" disabled={!bulkJson || busy !== ""} onClick={() => void importBulkQuizzes("publish")} style={primaryButtonStyle}>
+            {busy === "bulk-import" ? "Publishing…" : "Publish valid records now"}
           </button>
         </div>
         {bulkPreview.length > 0 && (

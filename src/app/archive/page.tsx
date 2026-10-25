@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { getCurrentDateInTimezone } from "../../lib/config";
 import { getDatabase, listPublishedQuizSummaries } from "../../lib/quiz-database";
 
 export const dynamic = "force-dynamic";
 
 export default async function ArchivePage() {
-  const quizzes = await listPublishedQuizSummaries(await getDatabase());
+  const today = getCurrentDateInTimezone();
+  const quizzes = (await listPublishedQuizSummaries(await getDatabase()))
+    .filter((quiz) => quiz.publicationDate !== today);
 
   return (
     <main
@@ -47,7 +50,7 @@ export default async function ArchivePage() {
             fontSize: 12,
           }}
         >
-          Archive
+          Previous quizzes
         </p>
 
         <h1
@@ -57,14 +60,14 @@ export default async function ArchivePage() {
             lineHeight: 1.08,
           }}
         >
-          Published challenge library
+          Explore previous challenges
         </h1>
 
         <p
           style={{ margin: 0, color: "#475569", fontSize: 18, lineHeight: 1.7 }}
         >
-          Explore previous daily challenge drops and revisit the ideas that
-          sharpened your engineering judgment.
+          Today&apos;s quiz is on the home page. Browse earlier daily challenge
+          drops here and revisit the ideas that sharpened your engineering judgment.
         </p>
 
         <div
@@ -163,6 +166,11 @@ export default async function ArchivePage() {
           </li>
         ))}
       </ul>
+      {quizzes.length === 0 && (
+        <p style={{ color: "#475569", textAlign: "center", padding: "32px 0" }}>
+          No previous quizzes are available yet. Check back after today&apos;s quiz.
+        </p>
+      )}
     </main>
   );
 }

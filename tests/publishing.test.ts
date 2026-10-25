@@ -149,6 +149,10 @@ test("explicit schedule offsets are preserved as UTC instants and checked agains
 test("bulk import mode keeps drafts as drafts and resolves every scheduled date independently", () => {
   const now = Date.parse("2026-10-20T00:00:00.000Z");
   assert.deepEqual(
+    resolveImportPublication("publish", "2026-10-19", "Asia/Kolkata", undefined, now),
+    { status: "published" },
+  );
+  assert.deepEqual(
     resolveImportPublication("draft", "2026-10-19", "Asia/Kolkata", undefined, now),
     { status: "draft" },
   );

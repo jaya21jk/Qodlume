@@ -40,8 +40,8 @@ export async function POST(request: Request): Promise<Response> {
       return adminJson({ error: "Bulk imports are limited to 100 quizzes." }, 413);
     }
     const mode = "mode" in body ? body.mode : "draft";
-    if (mode !== "draft" && mode !== "schedule") {
-      return adminJson({ error: "Import mode must be draft or schedule." }, 400);
+    if (mode !== "draft" && mode !== "schedule" && mode !== "publish") {
+      return adminJson({ error: "Import mode must be draft, schedule, or publish." }, 400);
     }
 
     let db: Awaited<ReturnType<typeof getDatabase>>;
@@ -61,7 +61,7 @@ export async function POST(request: Request): Promise<Response> {
       id?: string;
       publicationDate?: string;
       status: "created" | "scheduled" | "failed" | "duplicate";
-      publicationStatus?: "draft" | "scheduled";
+      publicationStatus?: "draft" | "scheduled" | "published";
       timezone?: string;
       scheduledAt?: string;
       errors?: string[];
@@ -146,7 +146,7 @@ export async function POST(request: Request): Promise<Response> {
           .first<{ id: string; publication_date: string; status: string }>();
         if (existing) {
           if (
-            mode === "schedule" &&
+            mode !== "draft" &&
             existing.id === quiz.id &&
             existing.publication_date === quiz.publicationDate &&
             (existing.status === "draft" || existing.status === "validated")
@@ -162,33 +162,49 @@ export async function POST(request: Request): Promise<Response> {
               });
               continue;
             }
-            const schedule = normalizeScheduledPublicationTime(
-              savedQuiz.publicationDate,
-              savedQuiz.timezone,
-              quiz.scheduledAt,
-            );
-            if ("error" in schedule) {
+            if (publication.status === "published") {
+              await setQuizStatus(db, savedQuiz.id, "published", {
+                validationIssues: validation.errors,
+                expectedStatus: savedQuiz.status,
+              });
+            } else {
+              const schedule = normalizeScheduledPublicationTime(
+                savedQuiz.publicationDate,
+                savedQuiz.timezone,
+                quiz.scheduledAt,
+              );
+              if ("error" in schedule) {
+                results.push({
+                  index,
+                  id: quiz.id,
+                  publicationDate: quiz.publicationDate,
+                  status: "failed",
+                  errors: [schedule.error],
+                });
+                continue;
+              }
+              await setQuizStatus(db, savedQuiz.id, "scheduled", {
+                scheduledAt: schedule.scheduledAt,
+                expectedStatus: savedQuiz.status,
+              });
               results.push({
                 index,
                 id: quiz.id,
                 publicationDate: quiz.publicationDate,
-                status: "failed",
-                errors: [schedule.error],
+                status: "scheduled",
+                publicationStatus: "scheduled",
+                timezone: quiz.timezone,
+                scheduledAt: schedule.scheduledAt,
               });
               continue;
             }
-            await setQuizStatus(db, savedQuiz.id, "scheduled", {
-              scheduledAt: schedule.scheduledAt,
-              expectedStatus: savedQuiz.status,
-            });
             results.push({
               index,
               id: quiz.id,
               publicationDate: quiz.publicationDate,
-              status: "scheduled",
-              publicationStatus: "scheduled",
+              status: publication.status === "published" ? "created" : "scheduled",
+              publicationStatus: publication.status,
               timezone: quiz.timezone,
-              scheduledAt: schedule.scheduledAt,
             });
             continue;
           }
@@ -225,9 +241,9 @@ export async function POST(request: Request): Promise<Response> {
 
         await createDraftQuiz(db, { ...quiz, status: "draft" }, "admin");
         draftCreated = true;
-        if (publication.status === "scheduled") {
-          await setQuizStatus(db, quiz.id, "scheduled", {
-            scheduledAt: publication.scheduledAt,
+        if (publication.status !== "draft") {
+          await setQuizStatus(db, quiz.id, publication.status, {
+            scheduledAt: publication.status === "scheduled" ? publication.scheduledAt : undefined,
             validationIssues: validation.errors,
             expectedStatus: "draft",
           });
@@ -255,7 +271,7 @@ export async function POST(request: Request): Promise<Response> {
             error instanceof Error && /constraint/i.test(error.message)
               ? "A quiz or question with these IDs already exists."
               : draftCreated
-                ? `Saved as a draft, but scheduling failed: ${error instanceof Error ? error.message : "Unable to schedule publication."}`
+                ? `Saved as a draft, but publication failed: ${error instanceof Error ? error.message : "Unable to publish or schedule."}`
                 : "Unable to persist this quiz.",
           ],
         });
