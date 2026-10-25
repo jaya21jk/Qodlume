@@ -553,8 +553,8 @@ export function DailyGameChallengeConsole({
     }
   };
 
-  const bulkSchedule = async () => {
-    const items = selectedForSchedule.map((id) => {
+  const bulkSchedule = async (challengeIds: string[] = selectedForSchedule) => {
+    const items = challengeIds.map((id) => {
       const challenge = challenges.find((item) => item.id === id);
       const localValue = challenge
         ? scheduleInputs[id] ??
@@ -576,6 +576,7 @@ export function DailyGameChallengeConsole({
 
     setBusy("bulk-schedule");
     setError("");
+    setBulkResult([]);
     try {
       const response = await fetch("/api/admin/daily-game-challenges/bulk", {
         method: "POST",
@@ -620,6 +621,9 @@ export function DailyGameChallengeConsole({
         editorChallenge.scheduledAt,
       )
     : null;
+  const draftChallengeIds = challenges
+    .filter((challenge) => challenge.status === "draft")
+    .map((challenge) => challenge.id);
 
   return (
     <section style={{ display: "grid", gap: 20 }}>
@@ -648,6 +652,22 @@ export function DailyGameChallengeConsole({
               style={buttonStyle}
             >
               Schedule selected ({selectedForSchedule.length})
+            </button>
+            <button
+              type="button"
+              disabled={draftChallengeIds.length === 0 || busy !== ""}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Schedule all ${draftChallengeIds.length} saved drafts using their configured schedule times?`,
+                  )
+                ) {
+                  void bulkSchedule(draftChallengeIds);
+                }
+              }}
+              style={buttonStyle}
+            >
+              Schedule all saved drafts ({draftChallengeIds.length})
             </button>
           </div>
           {challenges.map((challenge) => (

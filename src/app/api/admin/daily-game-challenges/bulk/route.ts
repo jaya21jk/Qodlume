@@ -13,6 +13,7 @@ import {
   createDailyGameChallengeDraft,
   getAdminDailyGameChallenge,
   getDatabase,
+  publishDailyGameChallengeNow,
   setDailyGameChallengeStatus,
 } from "../../../../../lib/quiz-database";
 import type { DailyGameChallenge } from "../../../../../types/daily-game-challenge";
@@ -124,7 +125,16 @@ export async function POST(request: Request): Promise<Response> {
               continue;
             }
             if (publication.status === "published") {
-              await setDailyGameChallengeStatus(db, savedChallenge.id, "published");
+              const published = await publishDailyGameChallengeNow(db, savedChallenge.id);
+              results.push({
+                index,
+                publicationDate: published.publicationDate,
+                gameType: published.gameType,
+                status: "created",
+                publicationStatus: "published",
+                timezone: published.timezone,
+              });
+              continue;
             } else {
               const schedule = validateDailySchedule(
                 savedChallenge.publicationDate,
@@ -158,15 +168,6 @@ export async function POST(request: Request): Promise<Response> {
               });
               continue;
             }
-            results.push({
-              index,
-              publicationDate: challenge.publicationDate,
-              gameType: challenge.gameType,
-              status: publication.status === "published" ? "created" : "scheduled",
-              publicationStatus: publication.status,
-              timezone: challenge.timezone,
-            });
-            continue;
           }
           results.push({
             index,
@@ -179,17 +180,23 @@ export async function POST(request: Request): Promise<Response> {
         }
         const saved = await createDailyGameChallengeDraft(db, challenge, "admin");
         draftCreated = true;
+        let publishedChallenge: DailyGameChallenge | undefined;
         if (publication.status !== "draft") {
-          await setDailyGameChallengeStatus(
-            db,
-            saved.id,
-            publication.status,
-            publication.status === "scheduled" ? publication.scheduledAt : undefined,
-          );
+          if (publication.status === "published") {
+            publishedChallenge = await publishDailyGameChallengeNow(db, saved.id);
+          } else {
+            await setDailyGameChallengeStatus(
+              db,
+              saved.id,
+              "scheduled",
+              publication.scheduledAt,
+            );
+          }
         }
+        const resultChallenge = publishedChallenge ?? saved;
         results.push({
           index,
-          publicationDate: challenge.publicationDate,
+          publicationDate: resultChallenge.publicationDate,
           gameType: challenge.gameType,
           status: "created",
           publicationStatus: publication.status,
@@ -197,7 +204,7 @@ export async function POST(request: Request): Promise<Response> {
           scheduledAt: publication.status === "scheduled"
             ? publication.scheduledAt
             : challenge.scheduledAt,
-          challenge: {
+          challenge: publishedChallenge ?? {
             ...saved,
             status: publication.status,
             scheduledAt: publication.status === "scheduled"
@@ -231,8 +238,8 @@ export async function POST(request: Request): Promise<Response> {
     if (!("items" in body) || !Array.isArray(body.items) || body.items.length === 0) {
       return adminJson({ error: "items must be a non-empty array." }, 400);
     }
-    if (body.items.length > 100) {
-      return adminJson({ error: "Bulk scheduling is limited to 100 challenges." }, 413);
+    if (body.items.length > 500) {
+      return adminJson({ error: "Bulk scheduling is limited to 500 challenges." }, 413);
     }
     let db: Awaited<ReturnType<typeof getDatabase>>;
     try {

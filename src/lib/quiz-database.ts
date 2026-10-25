@@ -10,6 +10,7 @@ import type {
 } from "../types/quiz";
 import { isQuizPublic } from "./quiz-publishing";
 import {
+  getDateInTimezone,
   isDailyChallengeAvailable,
   validateDailyGameChallenge,
 } from "./daily-game-challenges";
@@ -625,6 +626,7 @@ export async function setDailyGameChallengeStatus(
   id: string,
   status: DailyGameStatus,
   scheduledAt?: string,
+  publicationDate?: string,
 ): Promise<DailyGameChallenge> {
   if (status === "scheduled" && !scheduledAt) {
     throw new Error("A scheduled daily game challenge must have a resolved scheduledAt timestamp.");
@@ -640,6 +642,7 @@ export async function setDailyGameChallengeStatus(
     .prepare(
       `UPDATE daily_game_challenges
        SET status = ?, scheduled_at = ?,
+           publication_date = COALESCE(?, publication_date),
            published_at = CASE WHEN ? = 'published' THEN ? ELSE published_at END,
            updated_at = ?
        WHERE id = ? AND status IN ${allowedSourceStatuses}`,
@@ -647,6 +650,7 @@ export async function setDailyGameChallengeStatus(
     .bind(
       status,
       status === "scheduled" ? scheduledAt ?? null : null,
+      publicationDate ?? null,
       status,
       now,
       now,
@@ -662,6 +666,31 @@ export async function setDailyGameChallengeStatus(
   const updated = await getAdminDailyGameChallenge(db, id);
   if (!updated) throw new Error("Updated daily game challenge could not be read back.");
   return updated;
+}
+
+export async function publishDailyGameChallengeNow(
+  db: D1Database,
+  id: string,
+): Promise<DailyGameChallenge> {
+  const challenge = await getAdminDailyGameChallenge(db, id);
+  if (!challenge) throw new Error("Daily game challenge not found.");
+  if (challenge.status !== "draft" && challenge.status !== "unpublished") {
+    throw new Error(`Cannot publish a ${challenge.status} challenge.`);
+  }
+
+  const publicationDate = getDateInTimezone(new Date(), challenge.timezone);
+  const existing = await db
+    .prepare(
+      `SELECT id FROM daily_game_challenges
+       WHERE game_type = ? AND publication_date = ? AND id != ? LIMIT 1`,
+    )
+    .bind(challenge.gameType, publicationDate, id)
+    .first<{ id: string }>();
+  if (existing) {
+    throw new Error(`A ${challenge.gameType} challenge already exists for ${publicationDate}.`);
+  }
+
+  return setDailyGameChallengeStatus(db, id, "published", undefined, publicationDate);
 }
 
 export async function publishDueDailyGameChallenges(

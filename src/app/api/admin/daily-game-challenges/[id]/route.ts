@@ -11,6 +11,7 @@ import {
 import {
   getAdminDailyGameChallenge,
   getDatabase,
+  publishDailyGameChallengeNow,
   setDailyGameChallengeStatus,
   updateDailyGameChallengeDraft,
 } from "../../../../../lib/quiz-database";
@@ -99,7 +100,7 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
         return adminJson({ error: "Challenge cannot be published until its content is fixed.", validation }, 422);
       }
       return adminJson({
-        challenge: await setDailyGameChallengeStatus(db, id, "published"),
+        challenge: await publishDailyGameChallengeNow(db, id),
       });
     }
 
@@ -138,6 +139,9 @@ export async function PATCH(request: Request, context: RouteContext): Promise<Re
     return adminJson({ error: "Unsupported challenge action." }, 400);
   } catch (error) {
     console.error("Daily game challenge status update failed.", error);
+    if (error instanceof Error && /already exists for \d{4}-\d{2}-\d{2}/i.test(error.message)) {
+      return adminJson({ error: error.message }, 409);
+    }
     if (error instanceof Error && /cannot change/i.test(error.message)) {
       return adminJson({ error: error.message }, 409);
     }
